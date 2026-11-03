@@ -1,0 +1,102 @@
+{
+ "title": "Nephland",
+ "root": "world",
+ "mode": "player",
+ "source": "sample",
+ "maps": [
+  {
+   "id": "world",
+   "title": "The Three Realms",
+   "image": "world.svg",
+   "parent": null
+  },
+  {
+   "id": "err",
+   "title": "Err",
+   "image": "err.svg",
+   "parent": "world"
+  },
+  {
+   "id": "hommlet",
+   "title": "Hommlet",
+   "image": "hommlet.svg",
+   "parent": "world"
+  }
+ ],
+ "locations": [
+  {
+   "id": "err",
+   "map": "world",
+   "name": "Err",
+   "x": 50,
+   "y": 52,
+   "type": "town",
+   "description": "Sample description. Capital of the Central Realm. Replace this text with whatever your players should know.",
+   "opens": "err"
+  },
+  {
+   "id": "hommlet",
+   "map": "world",
+   "name": "Hommlet",
+   "x": 44,
+   "y": 56,
+   "type": "town",
+   "description": "Sample description. A quiet village where the first campaign began.",
+   "opens": "hommlet"
+  },
+  {
+   "id": "old-watchtower",
+   "map": "world",
+   "name": "Old Watchtower",
+   "x": 60,
+   "y": 47,
+   "type": "landmark",
+   "description": "Sample landmark with no town map behind it."
+  },
+  {
+   "id": "gilded-gate",
+   "map": "err",
+   "name": "The Gilded Gate",
+   "x": 50,
+   "y": 88,
+   "type": "landmark",
+   "description": "Sample. The main entrance to the city."
+  },
+  {
+   "id": "rusty-flagon",
+   "map": "err",
+   "name": "The Rusty Flagon",
+   "x": 58,
+   "y": 40,
+   "type": "tavern",
+   "description": "Sample tavern where the party can rest and hear rumors."
+  },
+  {
+   "id": "barracks",
+   "map": "err",
+   "name": "Garrison Barracks",
+   "x": 24,
+   "y": 30,
+   "type": "landmark",
+   "description": "Sample. Home of the city guard."
+  },
+  {
+   "id": "moathouse-inn",
+   "map": "hommlet",
+   "name": "Moathouse Inn",
+   "x": 45,
+   "y": 50,
+   "type": "tavern",
+   "description": "Sample inn at the center of the village."
+  },
+  {
+   "id": "millers-row",
+   "map": "hommlet",
+   "name": "Miller's Row",
+   "x": 30,
+   "y": 65,
+   "type": "shop",
+   "description": "Sample shop."
+  }
+ ]
+}

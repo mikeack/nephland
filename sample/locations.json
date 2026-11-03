@@ -1,0 +1,139 @@
+[
+  {
+    "id": "err",
+    "name": "Err",
+    "map": "world",
+    "x": 50,
+    "y": 52,
+    "type": "town",
+    "opens": "err",
+    "revealed": true,
+    "description": "Sample description. Capital of the Central Realm. Replace this text with whatever your players should know."
+  },
+  {
+    "id": "hommlet",
+    "name": "Hommlet",
+    "map": "world",
+    "x": 44,
+    "y": 56,
+    "type": "town",
+    "opens": "hommlet",
+    "revealed": true,
+    "description": "Sample description. A quiet village where the first campaign began."
+  },
+  {
+    "id": "old-watchtower",
+    "name": "Old Watchtower",
+    "map": "world",
+    "x": 60,
+    "y": 47,
+    "type": "landmark",
+    "revealed": true,
+    "description": "Sample landmark with no town map behind it."
+  },
+  {
+    "id": "ashenfall",
+    "name": "Ashenfall",
+    "map": "world",
+    "x": 36,
+    "y": 23,
+    "type": "town",
+    "opens": "ashenfall",
+    "revealed": false,
+    "description": "Sample hidden town.",
+    "dm_notes": "SAMPLE-SECRET-ALPHA: the players have not found this town yet."
+  },
+  {
+    "id": "sunken-vault",
+    "name": "Sunken Vault",
+    "map": "world",
+    "x": 68,
+    "y": 80,
+    "type": "dungeon",
+    "revealed": false,
+    "description": "Sample hidden dungeon.",
+    "dm_notes": "SAMPLE-SECRET-BRAVO: holds the macguffin."
+  },
+  {
+    "id": "gilded-gate",
+    "name": "The Gilded Gate",
+    "map": "err",
+    "x": 50,
+    "y": 88,
+    "type": "landmark",
+    "revealed": true,
+    "description": "Sample. The main entrance to the city."
+  },
+  {
+    "id": "rusty-flagon",
+    "name": "The Rusty Flagon",
+    "map": "err",
+    "x": 58,
+    "y": 40,
+    "type": "tavern",
+    "revealed": true,
+    "description": "Sample tavern where the party can rest and hear rumors."
+  },
+  {
+    "id": "barracks",
+    "name": "Garrison Barracks",
+    "map": "err",
+    "x": 24,
+    "y": 30,
+    "type": "landmark",
+    "revealed": true,
+    "description": "Sample. Home of the city guard."
+  },
+  {
+    "id": "undercity-entrance",
+    "name": "Undercity Entrance",
+    "map": "err",
+    "x": 70,
+    "y": 62,
+    "type": "dungeon",
+    "revealed": false,
+    "description": "Sample hidden entrance.",
+    "dm_notes": "SAMPLE-SECRET-CHARLIE: reveal after session 4."
+  },
+  {
+    "id": "moathouse-inn",
+    "name": "Moathouse Inn",
+    "map": "hommlet",
+    "x": 45,
+    "y": 50,
+    "type": "tavern",
+    "revealed": true,
+    "description": "Sample inn at the center of the village."
+  },
+  {
+    "id": "millers-row",
+    "name": "Miller's Row",
+    "map": "hommlet",
+    "x": 30,
+    "y": 65,
+    "type": "shop",
+    "revealed": true,
+    "description": "Sample shop."
+  },
+  {
+    "id": "the-old-well",
+    "name": "The Old Well",
+    "map": "hommlet",
+    "x": 62,
+    "y": 35,
+    "type": "landmark",
+    "revealed": false,
+    "description": "Sample hidden location.",
+    "dm_notes": "SAMPLE-SECRET-DELTA: something is down there."
+  },
+  {
+    "id": "ash-chapel",
+    "name": "Ash Chapel",
+    "map": "ashenfall",
+    "x": 50,
+    "y": 50,
+    "type": "landmark",
+    "revealed": true,
+    "description": "Sample. Lives on a hidden map, so players never see it until Ashenfall is revealed."
+  }
+]

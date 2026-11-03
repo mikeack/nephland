@@ -1,0 +1,34 @@
+{
+  "title": "Nephland",
+  "root": "world",
+  "maps": [
+    {
+      "id": "world",
+      "title": "The Three Realms",
+      "image": "world.svg",
+      "parent": null,
+      "revealed": true
+    },
+    {
+      "id": "err",
+      "title": "Err",
+      "image": "err.svg",
+      "parent": "world",
+      "revealed": true
+    },
+    {
+      "id": "hommlet",
+      "title": "Hommlet",
+      "image": "hommlet.svg",
+      "parent": "world",
+      "revealed": true
+    },
+    {
+      "id": "ashenfall",
+      "title": "Ashenfall",
+      "image": "ashenfall.svg",
+      "parent": "world",
+      "revealed": false
+    }
+  ]
+}
