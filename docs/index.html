@@ -116,12 +116,69 @@ a{color:var(--gold)}
   .pin .label{display:none}
   #stage.zoomed .pin .label,.pin.sel .label{display:block}
 }
+
+[hidden]{display:none!important}
+.tabs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tab{background:none;border:1px solid var(--line);border-radius:99px;padding:6px 14px;cursor:pointer;color:var(--muted);text-decoration:none;font-size:.9rem}
+.tab:hover{color:var(--ink)}
+.tab.on{border-color:var(--gold);color:var(--gold)}
+.pill{font:600 .78rem/1 system-ui,sans-serif;padding:7px 11px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);text-decoration:none}
+.pill:hover{border-color:var(--gold)}
+#calview{flex:1;width:100%;max-width:1040px;margin:0 auto;padding:18px 16px 40px}
+#calview h2{margin:0;font-size:1.5rem;color:var(--gold)}
+#calview h3{margin:22px 0 8px;font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.calhead{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.calnav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.calnav .btn{padding:7px 12px}
+.calnav input{width:5.2em;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 8px;font:inherit}
+.sub{color:var(--muted);font-size:.92rem;margin:4px 0 0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{display:block;text-decoration:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);
+  border-left:4px solid var(--sc,var(--line));border-radius:var(--radius);padding:11px 12px;position:relative}
+.tile:hover{border-color:var(--gold);background:var(--panel2)}
+.tile b{display:block;font-size:1.02rem}
+.tile small{color:var(--muted);font:.72rem system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.tile.sp{border-left-color:var(--gold);background:linear-gradient(90deg,rgba(217,164,65,.12),var(--panel))}
+.tile.now{outline:2px solid var(--gold)}
+.tile .dots{position:absolute;right:10px;top:10px;color:var(--gold);font-size:.8rem}
+[data-season="Spring"]{--sc:#8fbf7a}[data-season="Summer"]{--sc:#d9a441}
+[data-season="Autumn"]{--sc:#d0623f}[data-season="Winter"]{--sc:#6fb7d6}
+.mgrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin-top:12px}
+.wd{text-align:center;font:600 .68rem system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:2px 0;overflow:hidden;text-overflow:ellipsis}
+.day{display:block;text-decoration:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  min-height:58px;padding:7px 8px;position:relative}
+.day:hover{border-color:var(--gold)}
+.day.sel{border-color:var(--gold);background:var(--panel2)}
+.day.now{box-shadow:0 0 0 2px var(--gold)}
+.day .ev{position:absolute;left:8px;right:6px;bottom:5px;font:.68rem/1.2 system-ui,sans-serif;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day.hv{border-style:dashed;border-color:var(--dm)}
+.feast{grid-column:1/-1;text-align:center;text-decoration:none;color:var(--gold);padding:12px;border-radius:8px;
+  border:1px solid var(--gold);background:linear-gradient(90deg,rgba(217,164,65,.08),rgba(217,164,65,.2),rgba(217,164,65,.08))}
+.feast:hover{filter:brightness(1.15)}
+.feast.now{box-shadow:0 0 0 2px var(--gold)}
+.evcard{background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+.evcard h4{margin:0 0 2px;font-size:1.05rem}
+.evcard .kind{font:600 .68rem/1 system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.evcard p{margin:8px 0}
+.evcard.hv{border:1px dashed var(--dm)}
+.evcard .dmbox{margin-top:10px;padding:9px;border:1px dashed var(--dm);border-radius:8px;font-size:.84rem}
+.evcard .dmbox code{font:.8rem ui-monospace,Menlo,monospace;color:var(--dm)}
+.lead{max-width:62ch;margin:10px 0}
+@media (max-width:820px){
+  .mgrid{gap:4px}.day{min-height:50px;padding:5px 6px}.day .ev{display:none}.day.has::after{content:"•";position:absolute;right:6px;bottom:3px;color:var(--gold)}
+  .wd{font-size:.58rem;letter-spacing:0}
+}
 </style>
 </head>
 <body>
 <header class="top">
   <div class="brand"><h1 id="title">Nephland</h1><span id="mode" class="chip" hidden>DM preview · not published</span></div>
   <nav id="crumbs" aria-label="Map location"></nav>
+  <div class="tabs" id="tabs" hidden>
+    <a class="tab on" id="tabMap" href="#">Map</a>
+    <a class="tab" id="tabCal" href="#calendar">Calendar</a>
+    <a class="pill" id="todayPill" href="#calendar" hidden></a>
+  </div>
 </header>
 <div class="layout">
   <div id="wrap">
@@ -146,6 +203,7 @@ a{color:var(--gold)}
     <p class="hint">Drag to pan. Scroll or pinch to zoom. Glowing red pins open a closer map.</p>
   </aside>
 </div>
+<main id="calview" hidden aria-label="Calendar"></main>
 
 <script>
 (function(){
@@ -154,7 +212,7 @@ const $ = s => document.querySelector(s);
 const els = {vp:$('#viewport'),stage:$('#stage'),img:$('#mapimg'),pins:$('#pins'),tip:$('#tip'),toast:$('#toast'),
   crumbs:$('#crumbs'),back:$('#back'),title:$('#title'),mode:$('#mode'),list:$('#places'),card:$('#card'),
   empty:$('#empty'),mapTitle:$('#mapTitle'),wrap:$('#wrap')};
-let data, maps, cur, isDM = false;
+let data, maps, cur, isDM = false, pendingLoc = null, cal = null, tiles = [];
 let view = {s:1,x:0,y:0};
 const MAX = 8;
 const clamp = (v,a,b) => Math.min(b,Math.max(a,v));
@@ -178,6 +236,7 @@ function fit(){
   const ar = (els.img.naturalWidth||4)/(els.img.naturalHeight||3);
   els.stage.style.width = Math.max(50, Math.min(vw, vh*ar)) + 'px';
   apply();
+  if(pendingLoc){ const l = pendingLoc; pendingLoc = null; select(l,true); }
 }
 function zoomAt(cx,cy,f){
   const ns = clamp(view.s*f,1,MAX), k = ns/view.s;
@@ -353,18 +412,184 @@ function show(m){
   if(els.img.complete && els.img.naturalWidth) fit();
 }
 function route(){
-  const id = decodeURIComponent(location.hash.slice(1)) || data.root;
-  show(maps[id] || maps[data.root]);
+  const raw = decodeURIComponent(location.hash.slice(1));
+  const parts = raw.split('@'), path = parts[0], locId = parts[1];
+  const isCal = cal && (path === 'calendar' || path.indexOf('calendar/') === 0);
+  document.body.classList.toggle('calmode', !!isCal);
+  document.querySelector('.layout').hidden = !!isCal;
+  $('#calview').hidden = !isCal;
+  $('#crumbs').hidden = !!isCal;
+  $('#tabMap').classList.toggle('on', !isCal);
+  $('#tabCal').classList.toggle('on', !!isCal);
+  if(isCal){ renderCal(path.split('/')); return; }
+  document.title = data.title;
+  const target = maps[path || data.root] || maps[data.root];
+  pendingLoc = null;
+  const loc = locId && data.locations.find(l => l.id === locId && l.map === target.id);
+  if(loc) pendingLoc = loc;
+  show(target);
 }
 els.back.onclick = () => { if(cur.parent) location.hash = encodeURIComponent(cur.parent); };
 window.addEventListener('hashchange', route);
 window.addEventListener('keydown', e => { if(e.key === 'Escape') closeCard(); });
 
-fetch('data/map-data.json').then(r => { if(!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
+
+/* ---------- calendar ---------- */
+const ord = n => { const v = n%100; return n+((v>=11&&v<=13)?'th':({1:'st',2:'nd',3:'rd'}[n%10]||'th')); };
+function h(tag,cls,text){ const e = document.createElement(tag); if(cls) e.className = cls; if(text != null) e.textContent = text; return e; }
+function calInit(c){
+  cal = c; cal.M = Object.fromEntries(c.months.map(m => [m.id,m])); cal.S = Object.fromEntries(c.special_days.map(x => [x.id,x]));
+  tiles = []; c.year.forEach(e => { if(e.special) tiles.push({k:'s',id:e.special}); else if(!(e.from > 1)) tiles.push({k:'m',id:e.month}); });
+}
+const tname = t => t.k === 's' ? cal.S[t.id].name : cal.M[t.id].name;
+const tindex = t => tiles.findIndex(x => x.k === t.k && x.id === t.id);
+const era = () => cal.era || '';
+function dateText(y,k,id,d){ return k === 's' ? cal.S[id].name+', '+y+' '+era() : ord(d)+' of '+cal.M[id].name+', '+y+' '+era(); }
+function evAt(y,k,id,d){ return cal.events.filter(e => (!e.year || e.year === y) && (k === 's' ? e.special === id : (e.month === id && (d == null || e.day === d)))); }
+function isNow(y,k,id,d){
+  const t = cal.today; if(!t || t.year !== y) return false;
+  return k === 's' ? t.special === id : (t.month === id && (d == null || t.day === d));
+}
+const calHref = (y,id,d) => '#calendar/'+y+(id ? '/'+id : '')+(d ? '/'+d : '');
+
+function evCard(e,y){
+  const c = h('div','evcard'+(isDM && !e.revealed ? ' hv' : ''));
+  c.appendChild(h('div','kind',(e.year ? 'One-time event' : 'Every year')+(isDM && !e.revealed ? ' · hidden from players' : '')));
+  c.appendChild(h('h4',null,e.title));
+  const k = e.special ? 's' : 'm';
+  c.appendChild(h('div','sub',dateText(e.year || y,k,e.special || e.month,e.day)));
+  if(e.description) c.appendChild(h('p',null,e.description));
+  const loc = e.location && data.locations.find(l => l.id === e.location);
+  if(loc){ const a = h('a','btn alt','Show '+loc.name+' on the map'); a.href = '#'+encodeURIComponent(loc.map)+'@'+encodeURIComponent(loc.id); c.appendChild(a); }
+  if(isDM){
+    const d = h('div','dmbox'); d.append('id: '); d.appendChild(h('code',null,e.id));
+    if(e.dm_notes){ const n = h('div',null,'DM notes: '+e.dm_notes); n.style.marginTop = '6px'; d.appendChild(n); }
+    const t = h('div',null,e.revealed ? 'Hide again with:  python3 nephland.py hide '+e.id : 'Reveal with:  python3 nephland.py reveal '+e.id);
+    t.style.cssText = 'margin-top:6px;color:var(--muted)'; d.appendChild(t); c.appendChild(d);
+  }
+  return c;
+}
+
+function yearNav(y,mid){
+  const head = h('div','calhead'), l = h('div');
+  l.appendChild(h('h2',null,mid || ('Year '+y+' '+era())));
+  if(mid) l.appendChild(h('div','sub','Year '+y+' '+era()));
+  head.appendChild(l);
+  const nav = h('div','calnav');
+  const p = h('a','btn alt','‹ Year '+(y-1)); p.href = calHref(Math.max(1,y-1)); if(y <= 1) p.hidden = true;
+  const n = h('a','btn alt','Year '+(y+1)+' ›'); n.href = calHref(y+1);
+  const f = h('form'); f.style.cssText = 'display:flex;gap:6px';
+  const inp = h('input'); inp.type = 'number'; inp.min = 1; inp.max = 9999; inp.placeholder = 'Year'; inp.setAttribute('aria-label','Go to year');
+  const go = h('button','btn alt','Go'); go.type = 'submit';
+  f.append(inp,go); f.onsubmit = ev => { ev.preventDefault(); const v = parseInt(inp.value,10); if(v >= 1) location.hash = calHref(v); };
+  nav.append(p,n,f); head.appendChild(nav); return head;
+}
+
+function renderCal(parts){
+  const root = $('#calview'); root.textContent = '';
+  const ty = cal.today && cal.today.year;
+  const y = Math.max(1, parseInt(parts[1],10) || ty || 1);
+  const id = parts[2], day = parseInt(parts[3],10) || null;
+  const tile = id && (cal.M[id] ? {k:'m',id} : cal.S[id] ? {k:'s',id} : null);
+  document.title = (tile ? tname(tile)+', ' : '')+'Year '+y+' — '+cal.name;
+  if(!tile) return renderYear(root,y);
+  if(tile.k === 'm') renderMonth(root,y,tile,day); else renderSpecial(root,y,tile);
+}
+
+function renderYear(root,y){
+  root.appendChild(yearNav(y));
+  if(cal.era_name) root.appendChild(h('p','sub',cal.name+' · '+cal.era_name+' ('+cal.era+')'));
+  const g = h('div','tiles'); g.style.marginTop = '14px';
+  tiles.forEach(t => {
+    const a = h('a','tile'+(t.k === 's' ? ' sp' : '')+(isNow(y,t.k,t.id) ? ' now' : '')); a.href = calHref(y,t.id);
+    if(t.k === 'm'){ a.dataset.season = cal.M[t.id].season; a.appendChild(h('b',null,cal.M[t.id].name)); a.appendChild(h('small',null,cal.M[t.id].season+' · '+cal.M[t.id].days+' days')); }
+    else { a.appendChild(h('b',null,cal.S[t.id].name)); a.appendChild(h('small',null,'Special day')); }
+    if(evAt(y,t.k,t.id).length) a.appendChild(h('span','dots','●'));
+    g.appendChild(a);
+  });
+  root.appendChild(g);
+  const evs = []; tiles.forEach(t => evAt(y,t.k,t.id).forEach(e => evs.push(e)));
+  evs.sort((a,b) => (a.day||0)-(b.day||0));
+  const byTile = (e) => tiles.findIndex(t => t.k === (e.special ? 's' : 'm') && t.id === (e.special || e.month));
+  evs.sort((a,b) => byTile(a)-byTile(b) || (a.day||0)-(b.day||0));
+  root.appendChild(h('h3',null,'Events in year '+y));
+  if(!evs.length) root.appendChild(h('p','hint','Nothing recorded for this year.'));
+  evs.forEach(e => root.appendChild(evCard(e,y)));
+}
+
+function stepper(root,y,t){
+  const i = tindex(t), nav = h('div','calnav');
+  const prev = i > 0 ? {y:y,t:tiles[i-1]} : (y > 1 ? {y:y-1,t:tiles[tiles.length-1]} : null);
+  const next = i < tiles.length-1 ? {y:y,t:tiles[i+1]} : {y:y+1,t:tiles[0]};
+  if(prev){ const a = h('a','btn alt','‹ '+tname(prev.t)); a.href = calHref(prev.y,prev.t.id); nav.appendChild(a); }
+  const up = h('a','btn alt','Year '+y); up.href = calHref(y); nav.appendChild(up);
+  const b = h('a','btn alt',tname(next.t)+' ›'); b.href = calHref(next.y,next.t.id); nav.appendChild(b);
+  return nav;
+}
+
+function renderMonth(root,y,t,sel){
+  const m = cal.M[t.id], head = h('div','calhead');
+  const l = h('div'); l.appendChild(h('h2',null,m.name)); l.appendChild(h('div','sub',m.season+' · Year '+y+' '+era())); head.append(l,stepper(root,y,t));
+  root.appendChild(head);
+  if(m.description) root.appendChild(h('p','lead',m.description));
+  const g = h('div','mgrid'); g.dataset.season = m.season;
+  cal.weekdays.forEach(w => g.appendChild(h('div','wd',w)));
+  const segs = cal.year.filter(e => e.month === t.id);
+  const spans = []; // ordered pieces: {from,to} or {special}
+  let at = 0;
+  cal.year.forEach((e,i) => {
+    if(e.month === t.id) spans.push({from:e.from||1,to:e.to||m.days});
+    else if(e.special && spans.length && spans[spans.length-1].to < m.days && segs.length > 1 && at < segs.length) spans.push({special:e.special});
+    if(e.month === t.id) at++;
+  });
+  const cellFor = d => {
+    const evs = evAt(y,'m',t.id,d), a = h('a','day'+(isNow(y,'m',t.id,d)?' now':'')+(sel===d?' sel':'')+(evs.length?' has':'')+(isDM && evs.some(e=>!e.revealed)?' hv':''));
+    a.href = calHref(y,t.id,d); a.appendChild(h('b',null,String(d)));
+    if(evs.length) a.appendChild(h('span','ev',evs[0].title+(evs.length>1?' +'+(evs.length-1):'')));
+    a.setAttribute('aria-label',ord(d)+' of '+m.name+(evs.length?', '+evs.length+' event'+(evs.length>1?'s':''):''));
+    return a;
+  };
+  spans.forEach(sp => {
+    if(sp.special){ const a = h('a','feast'+(isNow(y,'s',sp.special)?' now':''),cal.S[sp.special].name+' — special day'); a.href = calHref(y,sp.special); g.appendChild(a); }
+    else for(let d = sp.from; d <= sp.to; d++) g.appendChild(cellFor(d));
+  });
+  root.appendChild(g);
+  const evs = sel ? evAt(y,'m',t.id,sel) : evAt(y,'m',t.id);
+  root.appendChild(h('h3',null,sel ? dateText(y,'m',t.id,sel) : 'Events this month'));
+  if(!evs.length) root.appendChild(h('p','hint',sel ? 'Nothing recorded for this day.' : 'Nothing recorded this month. Pick a day to see it.'));
+  evs.forEach(e => root.appendChild(evCard(e,y)));
+  if(isNow(y,'m',t.id) && !sel) root.appendChild(h('p','hint','Today is highlighted.'));
+}
+
+function renderSpecial(root,y,t){
+  const s = cal.S[t.id], head = h('div','calhead');
+  const l = h('div'); l.appendChild(h('h2',null,s.name)); l.appendChild(h('div','sub','Special day · Year '+y+' '+era()+(isNow(y,'s',t.id)?' · Today':''))); head.append(l,stepper(root,y,t));
+  root.appendChild(head);
+  if(s.description) root.appendChild(h('p','lead',s.description));
+  const evs = evAt(y,'s',t.id);
+  root.appendChild(h('h3',null,'Events'));
+  if(!evs.length) root.appendChild(h('p','hint','Nothing recorded for this day.'));
+  evs.forEach(e => root.appendChild(evCard(e,y)));
+}
+
+function setupTabs(){
+  $('#tabs').hidden = false;
+  $('#tabCal').hidden = !cal;
+  const t = cal && cal.today;
+  if(t){
+    const k = t.special ? 's' : 'm', id = t.special || t.month;
+    const p = $('#todayPill'); p.hidden = false; p.textContent = 'Today · '+dateText(t.year,k,id,t.day);
+    p.href = calHref(t.year,id,t.day);
+  }
+}
+
+const getJSON = u => fetch(u).then(r => { if(!r.ok) throw new Error(r.status); return r.json(); });
+getJSON('data/map-data.json').then(d => {
   data = d; maps = Object.fromEntries(d.maps.map(m => [m.id,m])); isDM = d.mode === 'dm';
   els.title.textContent = d.title; els.mode.hidden = !isDM;
-  route();
-}).catch(() => fatal('Could not load the map data. If you opened this file directly, run <code>python3 nephland.py serve</code> instead and visit http://localhost:8000.'));
+  return getJSON('data/calendar-data.json').then(calInit, () => { cal = null; });
+}).then(() => { setupTabs(); route(); })
+.catch(() => fatal('Could not load the map data. If you opened this file directly, run <code>python3 nephland.py serve</code> instead and visit http://localhost:8000.'));
 })();
 </script>
 </body>

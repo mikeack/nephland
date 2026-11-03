@@ -1,0 +1,208 @@
+{
+ "name": "The Nephland Calendar",
+ "era": "PW",
+ "era_name": "Post Wilhelm",
+ "weekdays": [
+  "Umirean",
+  "Nephean",
+  "Tyéan",
+  "Yáraean",
+  "Kordean",
+  "Elenean"
+ ],
+ "months": [
+  {
+   "id": "linfey",
+   "name": "Lin'Fey",
+   "season": "Spring",
+   "days": 24,
+   "description": "Named after the Ancient Lin'Fey, creator of all plant life."
+  },
+  {
+   "id": "hedros",
+   "name": "Hedros",
+   "season": "Spring",
+   "days": 24,
+   "description": "Named after the Ancient Hedros, creator of water and all animal life that lives within it."
+  },
+  {
+   "id": "drin",
+   "name": "Drin",
+   "season": "Spring",
+   "days": 24,
+   "description": "Named after the Ancient Drin, creator of clouds and the one who controls the weather."
+  },
+  {
+   "id": "lof",
+   "name": "Lof",
+   "season": "Summer",
+   "days": 24,
+   "description": "Named after the Ancient Lof, creator of air and sky."
+  },
+  {
+   "id": "umirian",
+   "name": "Umirian",
+   "season": "Summer",
+   "days": 24,
+   "description": "Named after the Guardian Umir, Guardian of Humanity and Wielder of Light."
+  },
+  {
+   "id": "the-lady",
+   "name": "The Lady",
+   "season": "Summer",
+   "days": 24,
+   "description": "Origin has been lost."
+  },
+  {
+   "id": "alwynian",
+   "name": "Alwynian",
+   "season": "Summer",
+   "days": 24,
+   "description": "Named after the Great King Alwyn."
+  },
+  {
+   "id": "elerian",
+   "name": "Elerian",
+   "season": "Autumn",
+   "days": 24,
+   "description": "Named after the Great King Alwyn's wife, Queen Elerian."
+  },
+  {
+   "id": "larelian",
+   "name": "Larelian",
+   "season": "Autumn",
+   "days": 24,
+   "description": "Named after the Great King Alwyn's son, Prince Laralek."
+  },
+  {
+   "id": "dina",
+   "name": "Dina",
+   "season": "Autumn",
+   "days": 24,
+   "description": "Named after the Elvish word for “silent”."
+  },
+  {
+   "id": "raven",
+   "name": "Raven",
+   "season": "Winter",
+   "days": 24,
+   "description": "Named after the Goddess of Death: The Raven Queen."
+  },
+  {
+   "id": "ubrin",
+   "name": "Ubrin",
+   "season": "Winter",
+   "days": 24,
+   "description": "Named after the Ancient Ubrin, creator of space and stars."
+  },
+  {
+   "id": "taroc",
+   "name": "Ta'Roc",
+   "season": "Winter",
+   "days": 24,
+   "description": "Named after the Ancient Ta'Roc, the creator of rock and earth."
+  }
+ ],
+ "special_days": [
+  {
+   "id": "new-cycle",
+   "name": "New Cycle",
+   "description": "The first day of the year. A day to celebrate the beginning of the new year and the end of winter."
+  },
+  {
+   "id": "spring-pendulum",
+   "name": "Spring Pendulum",
+   "description": "The day that the light and darkness are balanced in the sky. Starting here there is less darkness and more sun."
+  },
+  {
+   "id": "lantern-festival",
+   "name": "Festival of Lanterns",
+   "description": "A festival of lights that takes place in the middle of summer to celebrate the long hours of light that Umir brings the day."
+  },
+  {
+   "id": "harvest-lanterns",
+   "name": "Festival of Lanterns (Harvest)",
+   "description": "A festival bringing in the final harvest and consuming the last large meal before the end of growth."
+  },
+  {
+   "id": "midwinters-feast",
+   "name": "Midwinter's Feast",
+   "description": "A single day representing the darkest day of the year, in the middle of Ubrin."
+  }
+ ],
+ "year": [
+  {
+   "special": "new-cycle"
+  },
+  {
+   "month": "linfey"
+  },
+  {
+   "month": "hedros"
+  },
+  {
+   "special": "spring-pendulum"
+  },
+  {
+   "month": "drin"
+  },
+  {
+   "month": "lof"
+  },
+  {
+   "month": "umirian"
+  },
+  {
+   "special": "lantern-festival"
+  },
+  {
+   "month": "the-lady"
+  },
+  {
+   "month": "alwynian"
+  },
+  {
+   "special": "harvest-lanterns"
+  },
+  {
+   "month": "elerian"
+  },
+  {
+   "month": "larelian"
+  },
+  {
+   "month": "dina"
+  },
+  {
+   "month": "raven"
+  },
+  {
+   "month": "ubrin",
+   "to": 12
+  },
+  {
+   "special": "midwinters-feast"
+  },
+  {
+   "month": "ubrin",
+   "from": 13
+  },
+  {
+   "month": "taroc"
+  }
+ ],
+ "events": [
+  {
+   "id": "sample-lantern-parade",
+   "title": "Sample event: Lantern parade in Err",
+   "description": "Sample. Events can repeat every year (leave out \"year\"), point at a map location, and be hidden until you reveal them.",
+   "special": "lantern-festival",
+   "location": "err"
+  }
+ ],
+ "mode": "player",
+ "today": {
+  "year": 35,
+  "special": "new-cycle"
+ }
+}

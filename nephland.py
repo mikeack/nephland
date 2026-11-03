@@ -10,10 +10,14 @@ Commands:
   hide <id>...     Hide a location and/or map by id, then rebuild + check
   serve [--dm]     Build and serve locally at http://localhost:8000
   hooks            Install the git pre-commit safety hook (run once per clone)
+  date             Show the in-world date players see on the site
+  date +N | -N     Move the in-world date forward/back N days, rebuild, check
+  date set <year> <month-or-holiday> [day]   e.g.  date set 35 linfey 14
+                                              or   date set 35 new-cycle
 
 Data source: dm/ if it exists (private, git-ignored), otherwise sample/.
 """
-import json, re, shutil, subprocess, sys, http.server, socketserver, functools
+import json, re, shutil, subprocess, sys, unicodedata, http.server, socketserver, functools
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -95,6 +99,31 @@ def build(dm):
     data = {"title": maps.get("title", "Nephland"), "root": maps["root"],
             "mode": "dm" if dm else "player", "source": SRC.name, "maps": out_maps, "locations": out_locs}
     (out / "data" / "map-data.json").write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    cal = load_calendar()
+    n_events = 0
+    if cal:
+        validate_calendar(cal, locs)
+        vis_locs = {l["id"] for l in out_locs}
+        out_events = []
+        for ev in cal.get("events", []):
+            vis = ev.get("revealed", False)
+            if not dm and not vis:
+                continue
+            item = {k: ev[k] for k in ("id", "title", "description", "month", "day", "special", "year", "location") if k in ev}
+            if not dm and item.get("location") not in vis_locs:
+                item.pop("location", None)
+            if dm:
+                item["revealed"] = vis
+                if ev.get("dm_notes"):
+                    item["dm_notes"] = ev["dm_notes"]
+            out_events.append(item)
+        cdata = {k: cal[k] for k in ("name", "era", "era_name", "weekdays", "months", "special_days", "year") if k in cal}
+        cdata["events"] = out_events
+        cdata["mode"] = "dm" if dm else "player"
+        if cal.get("today") and (dm or cal.get("show_today", True)):
+            cdata["today"] = cal["today"]
+        (out / "data" / "calendar-data.json").write_text(json.dumps(cdata, indent=1, ensure_ascii=False), encoding="utf-8")
+        n_events = len(out_events)
     shutil.copy(ROOT / "viewer" / "index.html", out / "index.html")
     (out / "maps").mkdir()
     for m in out_maps:
@@ -106,7 +135,167 @@ def build(dm):
         (out / "CNAME").write_text(DOMAIN + "\n")
         (out / ".nojekyll").write_text("")
     print(f"Built {'DM preview' if dm else 'PLAYER site'} -> {out.relative_to(ROOT)}  "
-          f"({len(out_maps)} maps, {len(out_locs)} locations; source: {SRC.name}/)")
+          f"({len(out_maps)} maps, {len(out_locs)} locations{', ' + str(n_events) + ' events' if cal else ''}; source: {SRC.name}/)")
+
+
+# ---------------------------------------------------------------- calendar
+def load_calendar():
+    p = SRC / "calendar.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def save_calendar(cal):
+    (SRC / "calendar.json").write_text(json.dumps(cal, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def norm(s):
+    s = unicodedata.normalize("NFKD", s.lower())
+    return re.sub(r"[^a-z0-9]", "", "".join(c for c in s if not unicodedata.combining(c)))
+
+
+def flat_days(cal):
+    months = {m["id"]: m for m in cal["months"]}
+    flat = []
+    for seg in cal["year"]:
+        if "special" in seg:
+            flat.append(("s", seg["special"], 1))
+        else:
+            m = months[seg["month"]]
+            flat.extend(("m", m["id"], d) for d in range(seg.get("from", 1), seg.get("to", m["days"]) + 1))
+    return flat
+
+
+def validate_calendar(cal, locs):
+    errs = []
+    months, specials = {}, {}
+    for m in cal["months"]:
+        if m["id"] in months:
+            errs.append(f"duplicate month id {m['id']!r}")
+        months[m["id"]] = m
+    for sd in cal["special_days"]:
+        if sd["id"] in specials or sd["id"] in months:
+            errs.append(f"duplicate id {sd['id']!r}")
+        specials[sd["id"]] = sd
+    wl = len(cal["weekdays"])
+    covered = {mid: [] for mid in months}
+    used = []
+    year = cal["year"]
+    for k, seg in enumerate(year):
+        if "special" in seg:
+            used.append(seg["special"])
+            if seg["special"] not in specials:
+                errs.append(f"year[{k}]: unknown special day {seg['special']!r}")
+        elif seg.get("month") in months:
+            m = months[seg["month"]]
+            lo, hi = seg.get("from", 1), seg.get("to", m["days"])
+            covered[m["id"]].extend(range(lo, hi + 1))
+            nxt = year[k + 1] if k + 1 < len(year) else None
+            if nxt and "special" in nxt and hi < m["days"] and hi % wl:
+                errs.append(f"month {m['id']!r} is split after day {hi}; splits must land on a week boundary (multiple of {wl})")
+        else:
+            errs.append(f"year[{k}]: unknown month {seg.get('month')!r}")
+    for mid, days in covered.items():
+        if sorted(days) != list(range(1, months[mid]["days"] + 1)):
+            errs.append(f"month {mid!r}: each of its {months[mid]['days']} days must appear exactly once in 'year'")
+    for sid in specials:
+        if used.count(sid) != 1:
+            errs.append(f"special day {sid!r} must appear exactly once in 'year'")
+    loc_ids = {l["id"] for l in locs}
+    seen = set()
+    for ev in cal.get("events", []):
+        eid = ev.get("id")
+        if not eid or eid in seen:
+            errs.append(f"event id missing or duplicated: {eid!r}")
+        seen.add(eid)
+        if not ev.get("title"):
+            errs.append(f"event {eid!r} has no title")
+        if "special" in ev:
+            if ev["special"] not in specials:
+                errs.append(f"event {eid!r}: unknown special day {ev['special']!r}")
+        elif ev.get("month") in months:
+            if not 1 <= ev.get("day", 0) <= months[ev["month"]]["days"]:
+                errs.append(f"event {eid!r}: day out of range")
+        else:
+            errs.append(f"event {eid!r}: needs either 'special' or 'month' + 'day'")
+        if ev.get("location") and ev["location"] not in loc_ids:
+            errs.append(f"event {eid!r}: unknown location {ev['location']!r}")
+    t = cal.get("today")
+    if t:
+        ok = isinstance(t.get("year"), int) and (t.get("special") in specials or
+             (t.get("month") in months and 1 <= t.get("day", 0) <= months[t["month"]]["days"]))
+        if not ok:
+            errs.append("'today' is invalid (use: date set <year> <month-or-holiday> [day])")
+    if errs:
+        sys.exit("calendar.json problems:\n  - " + "\n  - ".join(errs))
+
+
+def ordinal(n):
+    s = ["th", "st", "nd", "rd"]
+    v = n % 100
+    return f"{n}{s[(v - 20) % 10] if (v - 20) % 10 < 4 and not 10 <= v < 20 else s[0]}"
+
+
+def describe(cal, year, entry):
+    kind, ident, day = entry
+    if kind == "s":
+        name = next(s["name"] for s in cal["special_days"] if s["id"] == ident)
+        return f"{name}, {year} {cal['era']}"
+    name = next(m["name"] for m in cal["months"] if m["id"] == ident)
+    wd = cal["weekdays"][(day - 1) % len(cal["weekdays"])]
+    return f"{wd}, the {ordinal(day)} of {name}, {year} {cal['era']}"
+
+
+def cmd_date(args):
+    cal = load_calendar()
+    if not cal:
+        sys.exit(f"No calendar.json in {SRC.name}/")
+    validate_calendar(cal, load()[1])
+    flat = flat_days(cal)
+    n = len(flat)
+    t = cal.get("today")
+    if args and args[0] == "set":
+        if len(args) < 3:
+            sys.exit("Usage: date set <year> <month-or-holiday> [day]")
+        year = int(args[1])
+        key = norm(args[2])
+        month = next((m for m in cal["months"] if key in (norm(m["id"]), norm(m["name"]))), None)
+        special = next((s for s in cal["special_days"] if key in (norm(s["id"]), norm(s["name"]))), None)
+        if month:
+            if len(args) < 4:
+                sys.exit(f"Which day of {month['name']}? (1-{month['days']})")
+            day = int(args[3])
+            if not 1 <= day <= month["days"]:
+                sys.exit(f"{month['name']} has days 1-{month['days']}")
+            cal["today"] = {"year": year, "month": month["id"], "day": day}
+        elif special:
+            cal["today"] = {"year": year, "special": special["id"]}
+        else:
+            names = ", ".join([m["id"] for m in cal["months"]] + [s["id"] for s in cal["special_days"]])
+            sys.exit(f"Unknown month or holiday {args[2]!r}. Try one of: {names}")
+    elif args and re.fullmatch(r"[+-]\d+", args[0]):
+        if not t:
+            sys.exit("No 'today' set yet. Use: date set <year> <month-or-holiday> [day]")
+        entry = ("s", t["special"], 1) if "special" in t else ("m", t["month"], t["day"])
+        i = flat.index(entry) + int(args[0])
+        year = t["year"] + i // n
+        kind, ident, day = flat[i % n]
+        cal["today"] = {"year": year, "special": ident} if kind == "s" else {"year": year, "month": ident, "day": day}
+    elif args:
+        sys.exit("Usage: date | date +N | date -N | date set <year> <month-or-holiday> [day]")
+    else:
+        if not t:
+            sys.exit("No 'today' set yet. Use: date set <year> <month-or-holiday> [day]")
+        entry = ("s", t["special"], 1) if "special" in t else ("m", t["month"], t["day"])
+        print("Today:", describe(cal, t["year"], entry), f"(day {flat.index(entry) + 1} of {n})")
+        print("Players see this date" if cal.get("show_today", True) else "Hidden from players (show_today is false)")
+        return
+    t = cal["today"]
+    entry = ("s", t["special"], 1) if "special" in t else ("m", t["month"], t["day"])
+    save_calendar(cal)
+    print("Today is now:", describe(cal, t["year"], entry))
+    build(False)
+    check()
+    print("Now commit and push to publish:  git add -A && git commit -m 'Advance date' && git push")
 
 
 def check():
@@ -129,6 +318,20 @@ def check():
     for m in maps["maps"]:
         if m["id"] not in ok:
             forbidden |= {m["title"].lower(), m["id"].lower(), m["image"].lower()}
+    cal = load_calendar()
+    if cal:
+        for m in cal["months"]:
+            visible_words |= {m["name"].lower(), m["id"].lower()}
+        for sd in cal["special_days"]:
+            visible_words |= {sd["name"].lower(), sd["id"].lower()}
+        for ev in cal.get("events", []):
+            terms = {ev.get("title", "").lower(), ev.get("id", "").lower()}
+            if ev.get("revealed", False):
+                visible_words |= terms
+            else:
+                forbidden |= terms
+                if ev.get("dm_notes"):
+                    forbidden.add(ev["dm_notes"].lower())
     forbidden = {f for f in forbidden if f and f not in visible_words}
     if not PLAYER_OUT.exists():
         sys.exit("docs/ does not exist. Run build first.")
@@ -166,6 +369,12 @@ def list_all():
     for l in locs:
         flag = "revealed" if l.get("revealed") else "HIDDEN"
         print(f"  {l['id']:<18} {flag:<9} {l['name']}  [map: {l['map']}]" + (f" -> opens {l['opens']}" if l.get("opens") else ""))
+    cal = load_calendar()
+    if cal:
+        print("CALENDAR EVENTS")
+        for ev in cal.get("events", []):
+            flag = "revealed" if ev.get("revealed") else "HIDDEN"
+            print(f"  {ev['id']:<26} {flag:<9} {ev['title']}")
 
 
 def set_revealed(ids, value):
@@ -181,6 +390,16 @@ def set_revealed(ids, value):
         if m["id"] in ids:
             m["revealed"] = value
             hit.add(m["id"])
+    cal = load_calendar()
+    if cal:
+        changed = False
+        for ev in cal.get("events", []):
+            if ev.get("id") in ids:
+                ev["revealed"] = value
+                hit.add(ev["id"])
+                changed = True
+        if changed:
+            save_calendar(cal)
     missing = set(ids) - hit
     if missing:
         sys.exit(f"No location or map with id: {', '.join(sorted(missing))}")
@@ -210,6 +429,7 @@ def main():
     elif cmd == "reveal": set_revealed(a[1:], True)
     elif cmd == "hide": set_revealed(a[1:], False)
     elif cmd == "serve": serve("--dm" in a)
+    elif cmd == "date": cmd_date(a[1:])
     elif cmd == "hooks":
         subprocess.check_call(["git", "config", "core.hooksPath", ".githooks"], cwd=ROOT)
         print("Pre-commit hook installed (.githooks/pre-commit).")
