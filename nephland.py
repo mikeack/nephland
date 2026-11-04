@@ -9,6 +9,7 @@ Commands:
   reveal <id>...   Reveal a location and/or map by id, then rebuild + check
   hide <id>...     Hide a location and/or map by id, then rebuild + check
   serve [--dm]     Build and serve locally at http://localhost:8000
+  edit [--port N]  Open the pin editor at http://localhost:8800 (add, move, edit, delete pins)
   hooks            Install the git pre-commit safety hook (run once per clone)
   date             Show the in-world date players see on the site
   date +N | -N     Move the in-world date forward/back N days, rebuild, check
@@ -419,6 +420,176 @@ def serve(dm):
         httpd.serve_forever()
 
 
+# ---------------------------------------------------------------- editor
+PIN_TYPES = ("town", "landmark", "dungeon", "tavern", "shop")
+LOC_FIELDS = ("id", "name", "map", "x", "y", "type", "opens", "revealed", "description", "note_url", "dm_notes")
+
+
+def validate_locations(locs, maps):
+    """Return (clean list, errors). Only known fields are kept, in a stable order."""
+    if not isinstance(locs, list):
+        return None, ["expected a list of locations"]
+    map_ids = {m["id"] for m in maps["maps"]}
+    errs, clean, seen = [], [], set()
+    for i, l in enumerate(locs):
+        if not isinstance(l, dict):
+            errs.append(f"item {i} is not an object")
+            continue
+        lid = str(l.get("id", "")).strip()
+        label = lid or f"item {i}"
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", lid):
+            errs.append(f"{label}: id must be lowercase letters, numbers and hyphens")
+        elif lid in seen:
+            errs.append(f"{label}: another location already uses this id")
+        seen.add(lid)
+        if not str(l.get("name", "")).strip():
+            errs.append(f"{label}: name is required")
+        if l.get("map") not in map_ids:
+            errs.append(f"{label}: unknown map {l.get('map')!r}")
+        for k in ("x", "y"):
+            v = l.get(k)
+            if not isinstance(v, (int, float)) or isinstance(v, bool) or not 0 <= v <= 100:
+                errs.append(f"{label}: {k} must be a number from 0 to 100")
+        if l.get("opens") and l["opens"] not in map_ids:
+            errs.append(f"{label}: opens unknown map {l['opens']!r}")
+        url = l.get("note_url")
+        if url and not re.match(r"https?://", str(url)):
+            errs.append(f"{label}: note_url must start with http:// or https://")
+        item = {}
+        for k in LOC_FIELDS:
+            v = l.get(k)
+            if k in ("x", "y") and isinstance(v, (int, float)):
+                item[k] = round(float(v), 2)
+            elif k == "revealed":
+                item[k] = bool(v)
+            elif isinstance(v, str):
+                v = v.strip()
+                if v:
+                    item[k] = v
+            elif v is not None and k not in ("opens", "note_url", "dm_notes", "description", "type"):
+                item[k] = v
+        clean.append(item)
+    return clean, errs
+
+
+def edit(port):
+    import contextlib, io, os
+    build(True)
+    editor_js = ROOT / "viewer" / "editor.js"
+    allowed_hosts = {f"localhost:{port}", f"127.0.0.1:{port}"}
+
+    def rebuild():
+        out = io.StringIO()
+        ok = True
+        with contextlib.redirect_stdout(out):
+            try:
+                build(True)
+                build(False)
+                check()
+            except SystemExit as e:
+                ok = False
+                if e.code not in (None, 0, 1):
+                    print(e.code)
+        return ok, out.getvalue().strip()
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, directory=str(DM_OUT), **kw)
+
+        def log_message(self, fmt, *args):
+            pass
+
+        def send_json(self, code, obj):
+            body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def local_only(self):
+            if self.headers.get("Host") not in allowed_hosts:
+                self.send_error(403, "Editor only answers on localhost")
+                return False
+            origin = self.headers.get("Origin")
+            if origin and origin.split("://", 1)[-1] not in allowed_hosts:
+                self.send_error(403, "Cross-site request refused")
+                return False
+            return True
+
+        def end_headers(self):
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
+        def do_GET(self):
+            if not self.local_only():
+                return
+            path = self.path.split("?", 1)[0]
+            if path == "/api/locations":
+                maps, locs = load()
+                return self.send_json(200, {"locations": locs, "maps": maps["maps"], "types": PIN_TYPES, "source": SRC.name})
+            if path == "/editor.js":
+                body = editor_js.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/javascript; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path in ("/", "/index.html"):
+                html = (DM_OUT / "index.html").read_text(encoding="utf-8")
+                body = html.replace("</body>", '<script src="editor.js"></script>\n</body>').encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            return super().do_GET()
+
+        def do_POST(self):
+            if not self.local_only():
+                return
+            if self.path != "/api/locations":
+                return self.send_error(404)
+            if "application/json" not in (self.headers.get("Content-Type") or ""):
+                return self.send_json(415, {"ok": False, "errors": ["Expected JSON"]})
+            n = int(self.headers.get("Content-Length") or 0)
+            if not 0 < n <= 2_000_000:
+                return self.send_json(413, {"ok": False, "errors": ["Request too large"]})
+            try:
+                incoming = json.loads(self.rfile.read(n).decode("utf-8"))
+            except ValueError:
+                return self.send_json(400, {"ok": False, "errors": ["Not valid JSON"]})
+            maps, old = load()
+            clean, errs = validate_locations(incoming.get("locations") if isinstance(incoming, dict) else None, maps)
+            if errs:
+                return self.send_json(400, {"ok": False, "errors": errs})
+            target = SRC / "locations.json"
+            if old != clean:
+                shutil.copy(target, SRC / "locations.backup.json")
+            tmp = target.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(clean, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            os.replace(tmp, target)
+            ok, log = rebuild()
+            self.send_json(200, {"ok": True, "check_ok": ok, "log": log, "count": len(clean)})
+
+    if SRC.name == "sample":
+        print("Note: no dm/ folder, so you are editing sample/ data.")
+    socketserver.TCPServer.allow_reuse_address = True
+    try:
+        httpd = socketserver.TCPServer(("127.0.0.1", port), Handler)
+    except OSError:
+        sys.exit(f"Port {port} is busy. Try: python3 nephland.py edit --port {port + 1}")
+    with httpd:
+        print(f"Pin editor at http://localhost:{port}  (editing {SRC.name}/locations.json, Ctrl+C to stop)")
+        print("Saving rebuilds docs/ and runs the leak check. Publish with: git add -A && git commit -m '...' && git push")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nEditor stopped.")
+
+
 def main():
     a = sys.argv[1:]
     cmd = a[0] if a else "help"
@@ -429,6 +600,7 @@ def main():
     elif cmd == "reveal": set_revealed(a[1:], True)
     elif cmd == "hide": set_revealed(a[1:], False)
     elif cmd == "serve": serve("--dm" in a)
+    elif cmd == "edit": edit(int(a[a.index("--port") + 1]) if "--port" in a else 8800)
     elif cmd == "date": cmd_date(a[1:])
     elif cmd == "hooks":
         subprocess.check_call(["git", "config", "core.hooksPath", ".githooks"], cwd=ROOT)

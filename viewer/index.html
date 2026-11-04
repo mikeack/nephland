@@ -288,10 +288,16 @@ $('#zout').onclick = () => zoomCenter(1/1.5);
 $('#zreset').onclick = () => { view = {s:1,x:0,y:0}; apply(); };
 window.addEventListener('resize', () => { fit(); hideTip(); });
 
-/* DM helper: shift-click empty map to copy coordinates for locations.json */
+/* DM helper: shift-click empty map to copy coordinates for locations.json.
+   The local pin editor (nephland.py edit) also hooks plain clicks here. */
+const hooks = {};
 els.vp.addEventListener('click', e => {
-  if(!isDM || !e.shiftKey || moved || e.target.closest('.pin')) return;
+  if(!isDM || moved || e.target.closest('.pin')) return;
   const r = els.stage.getBoundingClientRect();
+  if(!e.shiftKey){
+    if(hooks.mapClick) hooks.mapClick((e.clientX-r.left)/r.width*100, (e.clientY-r.top)/r.height*100);
+    return;
+  }
   const x = ((e.clientX-r.left)/r.width*100).toFixed(1), y = ((e.clientY-r.top)/r.height*100).toFixed(1);
   const text = '"x": '+x+', "y": '+y;
   if(navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});
@@ -345,6 +351,7 @@ function renderCard(l){
     const tip = document.createElement('div'); tip.style.cssText = 'margin-top:6px;color:var(--muted)';
     tip.textContent = l.revealed ? 'Hide again with:  python3 nephland.py hide '+l.id : 'Reveal with:  python3 nephland.py reveal '+l.id;
     d.appendChild(tip); c.appendChild(d);
+    if(hooks.card) hooks.card(l, c);
   }
   c.hidden = false;
 }
@@ -383,6 +390,7 @@ function renderPins(){
     b.addEventListener('click', e => {
       if(moved) return;
       hideTip();
+      if(hooks.pinClick && hooks.pinClick(l)) return;
       if(opens && e.pointerType === 'mouse'){ location.hash = encodeURIComponent(l.opens); return; }
       select(l,false);
     });
@@ -410,6 +418,7 @@ function show(m){
   els.img.src = 'maps/'+encodeURI(m.image);
   renderCrumbs(); renderPins();
   if(els.img.complete && els.img.naturalWidth) fit();
+  if(hooks.mapShown) hooks.mapShown(m);
 }
 function route(){
   const raw = decodeURIComponent(location.hash.slice(1));
@@ -587,6 +596,14 @@ const getJSON = u => fetch(u).then(r => { if(!r.ok) throw new Error(r.status); r
 getJSON('data/map-data.json').then(d => {
   data = d; maps = Object.fromEntries(d.maps.map(m => [m.id,m])); isDM = d.mode === 'dm';
   els.title.textContent = d.title; els.mode.hidden = !isDM;
+  if(isDM) window.nephland = {
+    hooks, els,
+    get data(){ return data; }, get cur(){ return cur; },
+    reload(d2){ data = d2; maps = Object.fromEntries(d2.maps.map(m => [m.id,m])); renderPins(); },
+    select(id){ const l = data.locations.find(x => x.id === id && x.map === cur.id); if(l) select(l,false); else closeCard(); },
+    closeCard
+  };
+  if(isDM) window.dispatchEvent(new Event('nephland:ready'));
   return getJSON('data/calendar-data.json').then(calInit, () => { cal = null; });
 }).then(() => { setupTabs(); route(); })
 .catch(() => fatal('Could not load the map data. If you opened this file directly, run <code>python3 nephland.py serve</code> instead and visit http://localhost:8000.'));

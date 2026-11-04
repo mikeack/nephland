@@ -28,6 +28,7 @@ progresses.
 | `dm/maps.json`, `dm/locations.json`, `dm/calendar.json`, `dm/maps/` | Mike's real data and map images, including hidden things | **No** (private) |
 | `sample/` | Placeholder data and SVG maps so the project runs on a fresh clone | Yes |
 | `viewer/index.html` | The whole viewer: one self-contained page, no dependencies, no CDN | Yes |
+| `viewer/editor.js` | Pin editor, injected only by `nephland.py edit` (localhost). Never copied to `docs/` | Yes |
 | `nephland.py` | Build, leak check, reveal/hide, local server. Python 3 stdlib only | Yes |
 | `docs/` | Generated player site, published by GitHub Pages | Yes (generated) |
 | `dm-preview/` | Generated DM view with hidden items shown dashed | No |
@@ -42,6 +43,7 @@ with sample data.
 ```
 python3 nephland.py serve --dm      # DM preview at http://localhost:8000 (everything visible)
 python3 nephland.py serve           # exactly what players will see
+python3 nephland.py edit            # pin editor at http://localhost:8800 (add/move/edit/delete pins)
 python3 nephland.py list            # every map and location with its revealed status
 python3 nephland.py reveal <id>...  # reveal a location, map and/or calendar event, rebuild, leak-check
 python3 nephland.py hide <id>...    # undo a reveal
