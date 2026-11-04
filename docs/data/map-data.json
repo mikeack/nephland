@@ -2,24 +2,24 @@
  "title": "Nephland",
  "root": "world",
  "mode": "player",
- "source": "sample",
+ "source": "dm",
  "maps": [
   {
    "id": "world",
    "title": "The Three Realms",
-   "image": "world.svg",
+   "image": "world.jpg",
    "parent": null
   },
   {
    "id": "err",
    "title": "Err",
-   "image": "err.svg",
+   "image": "err.jpg",
    "parent": "world"
   },
   {
-   "id": "hommlet",
-   "title": "Hommlet",
-   "image": "hommlet.svg",
+   "id": "svellheim",
+   "title": "Svellheim",
+   "image": "svellheim.jpg",
    "parent": "world"
   }
  ],
@@ -28,75 +28,66 @@
    "id": "err",
    "map": "world",
    "name": "Err",
-   "x": 50,
-   "y": 52,
+   "x": 34.45,
+   "y": 43.8,
    "type": "town",
-   "description": "Sample description. Capital of the Central Realm. Replace this text with whatever your players should know.",
+   "description": "Capital of the Central Realm.",
    "opens": "err"
   },
   {
    "id": "hommlet",
    "map": "world",
-   "name": "Hommlet",
-   "x": 44,
-   "y": 56,
+   "name": "The Village of Hommlet",
+   "x": 46.85,
+   "y": 41.5,
    "type": "town",
-   "description": "Sample description. A quiet village where the first campaign began.",
-   "opens": "hommlet"
+   "description": "A village in the Central Realm. Some of its people have gone missing."
   },
   {
-   "id": "old-watchtower",
+   "id": "shireton",
    "map": "world",
-   "name": "Old Watchtower",
-   "x": 60,
-   "y": 47,
-   "type": "landmark",
-   "description": "Sample landmark with no town map behind it."
+   "name": "Shireton",
+   "x": 44.8,
+   "y": 54.55,
+   "type": "town",
+   "description": "A town in the Central Realm."
   },
   {
-   "id": "gilded-gate",
-   "map": "err",
-   "name": "The Gilded Gate",
-   "x": 50,
-   "y": 88,
-   "type": "landmark",
-   "description": "Sample. The main entrance to the city."
+   "id": "deepshire",
+   "map": "world",
+   "name": "Deepshire",
+   "x": 40.15,
+   "y": 56.1,
+   "type": "town",
+   "description": "A town in the Central Realm."
   },
   {
-   "id": "rusty-flagon",
-   "map": "err",
-   "name": "The Rusty Flagon",
-   "x": 58,
-   "y": 40,
-   "type": "tavern",
-   "description": "Sample tavern where the party can rest and hear rumors."
+   "id": "svellheim",
+   "map": "world",
+   "name": "Svellheim",
+   "x": 61.15,
+   "y": 18.35,
+   "type": "town",
+   "description": "Capital of the Northern Realm.",
+   "opens": "svellheim"
   },
   {
-   "id": "barracks",
-   "map": "err",
-   "name": "Garrison Barracks",
-   "x": 24,
-   "y": 30,
-   "type": "landmark",
-   "description": "Sample. Home of the city guard."
+   "id": "drihliri",
+   "map": "world",
+   "name": "Drihliri",
+   "x": 64.4,
+   "y": 85.0,
+   "type": "town",
+   "description": "Capital of the Southern Realm."
   },
   {
-   "id": "moathouse-inn",
-   "map": "hommlet",
-   "name": "Moathouse Inn",
-   "x": 45,
-   "y": 50,
-   "type": "tavern",
-   "description": "Sample inn at the center of the village."
-  },
-  {
-   "id": "millers-row",
-   "map": "hommlet",
-   "name": "Miller's Row",
-   "x": 30,
-   "y": 65,
-   "type": "shop",
-   "description": "Sample shop."
+   "id": "mylanore",
+   "map": "world",
+   "name": "Mylanore",
+   "x": 68.35,
+   "y": 54.8,
+   "type": "town",
+   "description": "A town in the Southern Realm."
   }
  ]
 }
