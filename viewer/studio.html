@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nephland Map Studio</title>
+<!-- Local tool, served only by `python3 nephland.py edit`. Never copied to docs/. -->
+<style>
+:root{--bg:#14110d;--panel:#1d1812;--panel2:#262017;--ink:#efe6d2;--muted:#a89d86;--line:#3a3226;--gold:#d9a441;--ember:#d0623f;--dm:#7aa2f7}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font:15px/1.4 Georgia,"Iowan Old Style",serif;display:flex;flex-direction:column}
+button,input,select{font:inherit;color:inherit}
+header{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{margin:0 8px 0 0;font-size:1rem;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);font-weight:600}
+header input,header select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+#title{width:190px}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--gold)}
+button:disabled{opacity:.45;cursor:default}
+button.main{background:var(--ember);border-color:var(--ember);color:#fff}
+.grow{flex:1}
+a{color:var(--gold)}
+main{flex:1;display:grid;grid-template-columns:230px minmax(0,1fr);min-height:0}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:12px;overflow:auto}
+aside h2{margin:14px 0 6px;font:600 .72rem/1 system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+aside h2:first-child{margin-top:0}
+.tool{display:flex;gap:9px;align-items:center;width:100%;text-align:left;margin-bottom:5px}
+.tool .sw{width:14px;height:14px;border-radius:50%;flex:none;border:1px solid #0006}
+.tool.on{border-color:var(--gold);background:#3a2f1c}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.two button.on{border-color:var(--gold);background:#3a2f1c}
+input[type=range]{width:100%;accent-color:var(--gold)}
+.check{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:.9rem;cursor:pointer}
+.hint{color:var(--muted);font-size:.8rem;margin:8px 0 0}
+kbd{font:.75rem ui-monospace,Menlo,monospace;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+#wrap{position:relative;overflow:hidden;background:#0d0b08;touch-action:none;cursor:none}
+#wrap.pan{cursor:grab}
+#stage{position:absolute;left:0;top:0;transform-origin:0 0}
+#stage img,#over{position:absolute;inset:0;width:100%;height:100%;display:block;user-select:none;-webkit-user-drag:none}
+#over{pointer-events:none}
+#pins{position:absolute;inset:0;pointer-events:none}
+.p{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--ember);border:1px solid #fff;transform:scale(var(--inv,1))}
+.p i{position:absolute;left:11px;top:-5px;font:600 11px system-ui,sans-serif;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap}
+.p.h{background:transparent;border:1px dashed var(--dm)}
+#ring{position:absolute;border:1.5px solid #fff;outline:1px solid #000a;border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);display:none}
+#status{position:absolute;left:12px;bottom:12px;background:#1d1812ee;border:1px solid var(--dm);border-radius:8px;padding:7px 11px;font-size:.85rem;max-width:520px;white-space:pre-wrap}
+#status:empty{display:none}
+#newbox{position:absolute;left:50%;top:60px;transform:translateX(-50%);width:320px;background:var(--panel);border:1px solid var(--gold);border-radius:10px;padding:14px;z-index:5}
+#newbox label{display:block;margin:8px 0 4px;font-size:.85rem;color:var(--muted)}
+#newbox input,#newbox select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+#newbox .row{display:flex;gap:8px;margin-top:12px}
+#impbox{position:absolute;right:12px;top:12px;width:290px;max-height:calc(100% - 24px);overflow:auto;background:var(--panel);border:1px solid var(--gold);border-radius:10px;padding:12px;z-index:5;cursor:default}
+#impbox h2{margin:12px 0 6px;font:600 .72rem/1 system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+#impbox .row{display:flex;gap:8px;margin-top:12px}
+.irow{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:.8rem}
+.irow .c{width:24px;height:24px;border-radius:6px;border:1px solid #000;flex:none}
+.irow .pc{width:36px;color:var(--muted);flex:none;text-align:right}
+.irow select{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 6px}
+#wrap.dropping{outline:3px dashed var(--gold);outline-offset:-8px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Map Studio</h1>
+  <select id="pick" aria-label="Open a map"></select>
+  <input id="title" aria-label="Map name" placeholder="Map name">
+  <button id="new">New map</button>
+  <button id="imp">Import town map</button>
+  <input id="impfile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+  <button id="undo" disabled title="Undo (Cmd+Z)">Undo</button>
+  <button id="redo" disabled title="Redo (Shift+Cmd+Z)">Redo</button>
+  <span class="grow"></span>
+  <a href="/">Pin editor</a>
+  <button id="save" class="main">Save</button>
+  <button id="use" title="Saves, then makes the site use this map">Use on site</button>
+</header>
+<main>
+  <aside>
+    <h2>Paint</h2>
+    <div id="tools"></div>
+    <div class="two" style="margin-top:6px">
+      <button id="paint" class="on">Paint</button>
+      <button id="erase">Erase</button>
+    </div>
+    <h2>Brush size <span id="sizev"></span></h2>
+    <input id="size" type="range" min="2" max="140" value="30" aria-label="Brush size">
+    <h2>View</h2>
+    <label class="check"><input type="checkbox" id="showpins" checked> Show pins</label>
+    <p class="hint">Drag to paint. Scroll to zoom. Hold <kbd>Space</kbd> and drag to move around.<br><kbd>E</kbd> erase, <kbd>[</kbd> <kbd>]</kbd> brush size.</p>
+    <p class="hint" id="order"></p>
+  </aside>
+  <div id="wrap">
+    <div id="stage"><img id="art" alt="Map being edited" draggable="false"><canvas id="over"></canvas><div id="pins"></div></div>
+    <div id="ring"></div>
+    <div id="status" role="status"></div>
+    <div id="impbox" hidden>
+      <strong>Match the colors</strong>
+      <p class="hint">Tell the studio what each color in your map is. The map updates as you change these.</p>
+      <div id="improws"></div>
+      <h2>Number of colors <span id="impkv"></span></h2>
+      <input id="impk" type="range" min="2" max="9" value="6" aria-label="Number of colors">
+      <div class="row"><button id="impdone" class="main">Done</button></div>
+    </div>
+    <div id="newbox" hidden>
+      <strong>New map</strong>
+      <label for="nname">Name</label><input id="nname" placeholder="e.g. The Jade Isles">
+      <label for="ntype">Type</label>
+      <select id="ntype"><option value="world">World or region map</option><option value="town">Town map</option></select>
+      <div class="row"><button id="ncreate" class="main">Create</button><button id="ncancel">Cancel</button></div>
+    </div>
+  </div>
+</main>
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const TEMPLATES = {
+  world: {W:1000, H:1500, K:2, order:'Roads always draw under trees and mountains, above the green forest floor.', layers:[
+    {id:'land', label:'Land', erase:'Sea', color:'#d9c98f', size:50},
+    {id:'water', label:'River or lake', color:'#6d9aa6', size:5},
+    {id:'road', label:'Road', color:'#4a3d2e', size:3},
+    {id:'forest', label:'Forest', color:'#6f8f4f', size:36},
+    {id:'mountain', label:'Mountains', color:'#a07f55', size:44},
+    {id:'hills', label:'Hills', color:'#c0a878', size:36}]},
+  town: {W:1000, H:1000, K:2, order:'Streets draw under buildings and trees.', layers:[
+    {id:'water', label:'River or lake', color:'#6d9aa6', size:22},
+    {id:'road', label:'Street', color:'#efe3c4', size:9},
+    {id:'buildings', label:'Buildings', color:'#b98f5e', size:50},
+    {id:'blocks', label:'Building blocks', color:'#8a6f4c', size:16},
+    {id:'fields', label:'Farm fields', color:'#b3a26c', size:70},
+    {id:'forest', label:'Trees', color:'#6f8f4f', size:34},
+    {id:'wall', label:'Wall or ink line', color:'#3a2f24', size:5}]}
+};
+const PAL = {sea:'#a9bcbc', land:'#e6dcc0', ink:'#4a3d2e', forest:'#a8b28a', river:'#8fa8aa',
+  rings:[[44,'#bccbc9',.8],[36,'#a9bcbc',1],[22,'#c7d4d0',.85],[16,'#a9bcbc',1],[8,'#dbe3dc',.9]],
+  peak:'#d9c8a3', peakShade:'#a98f68', tree:'#94a678', treeShade:'#66794f', building:'#d3bf95', street:'#f1e8d0', hatch:'#bcae7e'};
+
+let T = null, doc = null, masks = {}, data = {}, cache = {}, tool = null, erasing = false, size = 30;
+let view = {s:1,x:0,y:0}, undo = [], redo = [], dirty = false, docs = [], stroke = null, spaceDown = false, pan = null, timer = 0, url = null;
+const wrap = $('#wrap'), stage = $('#stage'), art = $('#art'), over = $('#over'), ring = $('#ring'), statusEl = $('#status');
+const octx = over.getContext('2d');
+const say = t => { statusEl.textContent = t || ''; };
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const slug = s => s.normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/['’]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+function hash(a,b,c){ let t = Math.imul(a,73856093)^Math.imul(b,19349663)^Math.imul(c,83492791); t = Math.imul(t^(t>>>13),1274126177); return ((t^(t>>>16))>>>0)/4294967296; }
+
+/* ---------- geometry ---------- */
+function box(src,r,want){
+  const {W,H} = T, tmp = new Uint8Array(W*H), out = new Uint8Array(W*H);
+  for(let y=0;y<H;y++){ const o = y*W; let n = 0;
+    for(let x=-r;x<W+r;x++){ const a = x+r; if(a<W && src[o+a]===want) n++; const b = x-r-1; if(b>=0 && b<W && src[o+b]===want) n--; if(x>=0 && x<W && n) tmp[o+x] = 1; } }
+  for(let x=0;x<W;x++){ let n = 0;
+    for(let y=-r;y<H+r;y++){ const a = y+r; if(a<H && tmp[a*W+x]) n++; const b = y-r-1; if(b>=0 && b<H && tmp[b*W+x]) n--; if(y>=0 && y<H) out[y*W+x] = n ? 1 : 0; } }
+  if(want === 0) for(let i=0;i<out.length;i++) out[i] = 1-out[i];
+  return out;
+}
+const dilate = (m,r) => box(m,r,1), erode = (m,r) => box(m,r,0);
+function contours(m,minlen){
+  const {W,H} = T, key = (x,y) => y*(W+2)+x, nxt = new Map();
+  const add = (a,b) => { const l = nxt.get(a); if(l) l.push(b); else nxt.set(a,[b]); };
+  for(let y=0;y<H;y++){ const o = y*W;
+    for(let x=0;x<W;x++){ if(!m[o+x]) continue;
+      if(y===0 || !m[o-W+x]) add(key(x,y),key(x+1,y));
+      if(x===W-1 || !m[o+x+1]) add(key(x+1,y),key(x+1,y+1));
+      if(y===H-1 || !m[o+W+x]) add(key(x+1,y+1),key(x,y+1));
+      if(x===0 || !m[o+x-1]) add(key(x,y+1),key(x,y)); } }
+  const loops = [];
+  while(nxt.size){
+    const s = nxt.keys().next().value; let p = s; const loop = [];
+    for(;;){
+      loop.push([p%(W+2),Math.floor(p/(W+2))]);
+      const l = nxt.get(p), q = l.pop(); if(!l.length) nxt.delete(p);
+      p = q; if(p === s || !nxt.has(p)) break;
+    }
+    if(loop.length >= minlen) loops.push(loop);
+  }
+  return loops;
+}
+function rdp(pts,eps){
+  const n = pts.length, keep = new Uint8Array(n); keep[0] = keep[n-1] = 1; const st = [[0,n-1]];
+  while(st.length){
+    const [a,b] = st.pop(), [ax,ay] = pts[a], [bx,by] = pts[b], dx = bx-ax, dy = by-ay, L = Math.hypot(dx,dy)||1;
+    let md = 0, mi = -1;
+    for(let i=a+1;i<b;i++){ const d = Math.abs((pts[i][0]-ax)*dy-(pts[i][1]-ay)*dx)/L; if(d>md){ md = d; mi = i; } }
+    if(md>eps){ keep[mi] = 1; st.push([a,mi],[mi,b]); }
+  }
+  return pts.filter((_,i) => keep[i]);
+}
+function pathOf(loops,eps){
+  const K = T.K; let d = '';
+  for(const lp0 of loops){
+    let top = 0; for(let i=1;i<lp0.length;i++) if(lp0[i][0]>lp0[top][0]) top = i;
+    const lp = lp0.slice(top).concat(lp0.slice(0,top),[lp0[top]]), h = lp.length>>1;
+    const p = rdp(lp.slice(0,h+1),eps).slice(0,-1).concat(rdp(lp.slice(h),eps).slice(0,-1));
+    if(p.length<3) continue;
+    // round each corner by at most R pixels, so long straight edges stay straight
+    const R = 7, n = p.length, toward = (a,b) => { const dx = b[0]-a[0], dy = b[1]-a[1], L = Math.hypot(dx,dy), t = Math.min(.5,R/L); return [Math.round((a[0]+dx*t)*K),Math.round((a[1]+dy*t)*K)]; };
+    for(let j=0;j<n;j++){
+      const c = p[j], a = toward(c,p[(j+n-1)%n]), b = toward(c,p[(j+1)%n]);
+      d += (j ? 'L' : 'M')+a[0]+' '+a[1]+'Q'+c[0]*K+' '+c[1]*K+' '+b[0]+' '+b[1];
+    }
+    d += 'Z';
+  }
+  return d;
+}
+
+/* ---------- drawn marks (original artwork) ---------- */
+function defs(){
+  const ink = PAL.ink, peak = (body,shade,hatch) => '<path d="'+body+'" fill="'+PAL.peak+'" stroke="'+ink+'" stroke-width="2.6" stroke-linejoin="round"/><path d="'+shade+'" fill="'+PAL.peakShade+'"/><path d="'+hatch+'" stroke="'+ink+'" stroke-width="1.5" fill="none" stroke-linecap="round"/>';
+  const tree = (b,s) => '<path d="'+b+'" fill="'+PAL.tree+'" stroke="'+ink+'" stroke-width="1.7"/><path d="'+s+'" fill="'+PAL.treeShade+'"/>';
+  const g = {
+    p1:peak('M-52 0L-28 -30L-18 -24L4 -66L20 -36L30 -42L54 0Z','M4 -66L20 -36L12 -24L24 -12L18 0L-8 0L4 -22L-4 -36Z','M30 -30L40 -6M22 -14L30 -2'),
+    p2:peak('M-46 0L-12 -56L4 -34L14 -44L46 0Z','M-12 -56L4 -34L-2 -22L10 -10L6 0L-16 0L-6 -20L-14 -36Z','M20 -28L32 -4M12 -14L20 -2'),
+    p3:peak('M-58 0L-34 -24L-16 -46L-4 -30L14 -72L34 -26L58 0Z','M14 -72L34 -26L26 -16L36 0L8 0L18 -22L6 -40Z','M42 -18L50 -4M-22 -24L-30 -8'),
+    p4:peak('M-40 0L-6 -50L10 -26L40 0Z','M-6 -50L10 -26L4 -14L12 0L-8 0L0 -18L-8 -32Z','M20 -16L28 -2'),
+    t1:tree('M-9 2C-14 -1 -14 -8 -9 -10C-9 -16 -1 -19 3 -15C9 -16 13 -9 10 -5C13 -1 10 3 5 2C2 5 -6 5 -9 2Z','M3 -15C9 -16 13 -9 10 -5C13 -1 10 3 5 2C3 4 0 4 -2 3C4 0 6 -8 3 -15Z'),
+    t2:tree('M-8 3C-13 0 -11 -7 -7 -8C-6 -14 3 -15 6 -10C11 -9 12 -2 8 1C7 4 -5 6 -8 3Z','M6 -10C11 -9 12 -2 8 1C7 3 3 4 0 4C5 0 7 -5 6 -10Z'),
+    t3:tree('M-7 3L-10 -3C-10 -9 -5 -13 0 -13C6 -13 10 -8 9 -3L7 3C3 5 -3 5 -7 3Z','M0 -13C6 -13 10 -8 9 -3L7 3C5 4 2 4 0 4C4 -1 4 -8 0 -13Z'),
+    h1:'<path d="M-16 0C-10 -13 8 -14 16 0M4 -4C7 -4 10 -3 11 -1" fill="none" stroke="'+ink+'" stroke-width="2" stroke-linecap="round"/>',
+    h2:'<path d="M-20 0C-13 -11 -5 -11 0 -3C5 -11 13 -10 18 0" fill="none" stroke="'+ink+'" stroke-width="2" stroke-linecap="round"/>'
+  };
+  return Object.keys(g).map(k => '<g id="'+k+'">'+g[k]+'</g>').join('')+
+    '<pattern id="hatch" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(32)"><path d="M0 6H12" stroke="'+PAL.hatch+'" stroke-width="2.4"/></pattern>';
+}
+function compass(cx,cy,R){
+  const ink = PAL.ink, f = n => n.toFixed(0); let s = '<circle cx="'+cx+'" cy="'+cy+'" r="'+f(R*.58)+'" fill="none" stroke="'+ink+'" stroke-width="2.4"/>';
+  for(let i=0;i<8;i++){
+    const a = i*Math.PI/4-Math.PI/2, r = i%2 ? R*.62 : R, sd = R*.1, tx = cx+r*Math.cos(a), ty = cy+r*Math.sin(a);
+    const lx = cx+sd*Math.cos(a-Math.PI/4), ly = cy+sd*Math.sin(a-Math.PI/4), rx = cx+sd*Math.cos(a+Math.PI/4), ry = cy+sd*Math.sin(a+Math.PI/4);
+    s += '<path d="M'+f(tx)+' '+f(ty)+'L'+f(lx)+' '+f(ly)+'L'+cx+' '+cy+'Z" fill="'+PAL.land+'" stroke="'+ink+'" stroke-width="2.4"/>';
+    s += '<path d="M'+f(tx)+' '+f(ty)+'L'+f(rx)+' '+f(ry)+'L'+cx+' '+cy+'Z" fill="'+ink+'" stroke="'+ink+'" stroke-width="2.4"/>';
+  }
+  return s+'<path d="M'+(cx-12)+' '+f(cy-R-16)+'v-34l24 34v-34" fill="none" stroke="'+ink+'" stroke-width="4.5" stroke-linejoin="round"/>';
+}
+function read(id){
+  if(data[id]) return data[id];
+  const {W,H} = T, px = masks[id].getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data, a = new Uint8Array(W*H);
+  for(let i=0;i<a.length;i++) a[i] = px[i*4];
+  return data[id] = a;
+}
+const bin = (a,thr) => { const m = new Uint8Array(a.length); for(let i=0;i<a.length;i++) if(a[i]>thr) m[i] = 1; return m; };
+function memo(name,deps,fn){
+  const stamp = deps.map(d => ver[d]||0).join();
+  if(cache[name] && cache[name].stamp === stamp) return cache[name].v;
+  const v = fn(); cache[name] = {stamp,v}; return v;
+}
+let ver = {};
+function scatter(step,salt,test){
+  const {W,H} = T, out = [];
+  for(let gy=0;gy<H;gy+=step) for(let gx=0;gx<W;gx+=step){
+    const x = gx+hash(gx,gy,salt)*step, y = gy+hash(gx,gy,salt+1)*step, ix = x|0, iy = y|0;
+    if(ix<W && iy<H){ const v = test(ix,iy,hash(gx,gy,salt+2)); if(v) out.push([x,y,v,gx,gy]); }
+  }
+  return out;
+}
+const use = (id,x,y,s) => '<use href="#'+id+'" transform="translate('+Math.round(x)+' '+Math.round(y)+') scale('+s.toFixed(2)+')"/>';
+function markSvg(treeOnly){
+  const {W,K} = T, f = read('forest'), mt = treeOnly ? null : read('mountain'), hl = treeOnly ? null : read('hills');
+  const wa = read('water'), la = treeOnly ? null : read('land'), rd = treeOnly ? read('road') : null, b = treeOnly ? read('buildings') : null;
+  const ok = (x,y) => { for(const [dx,dy] of [[0,0],[3,0],[-3,0],[0,3],[0,-3]]){ const i = (y+dy)*W+x+dx; if(i<0 || i>=wa.length || wa[i]>127 || (la && la[i]<128) || (rd && rd[i]>127) || (b && b[i]>127)) return false; } return true; };
+  const m = [];
+  if(!treeOnly){
+    for(const [x,y,v,gx,gy] of scatter(15,11,(ix,iy) => mt[iy*W+ix]>95 && ok(ix,iy) ? mt[iy*W+ix]/255 : 0))
+      m.push([y,'p'+(1+(hash(gx,gy,21)*4|0)),x*K,y*K,(.62+.62*v)*(.86+hash(gx,gy,22)*.28)]);
+    for(const [x,y,,gx,gy] of scatter(17,31,(ix,iy) => hl[iy*W+ix]>95 && mt[iy*W+ix]<70 && ok(ix,iy)))
+      m.push([y,'h'+(1+(hash(gx,gy,41)*2|0)),x*K,y*K,.8+hash(gx,gy,42)*.35]);
+  }
+  for(const [x,y,,gx,gy] of scatter(10,51,(ix,iy,r) => f[iy*W+ix]>58 && (!mt || mt[iy*W+ix]<70) && r<.82 && ok(ix,iy)))
+    m.push([y,'t'+(1+(hash(gx,gy,61)*3|0)),x*K,y*K,1+hash(gx,gy,62)*.35]);
+  m.sort((a,b) => a[0]-b[0]);
+  return m.map(q => use(q[1],q[2],q[3],q[4])).join('');
+}
+function buildingsSvg(){
+  const {W,H,K} = T, b = read('buildings'), rd = read('road'), wa = read('water'), wl = read('wall');
+  const I = new Int32Array((W+1)*(H+1));
+  for(let y=0;y<H;y++){ let row = 0; for(let x=0;x<W;x++){ if(rd[y*W+x]>127) row++; I[(y+1)*(W+1)+x+1] = I[y*(W+1)+x+1]+row; } }
+  const sum = (a,c,bb,d) => { a = Math.max(0,a); c = Math.max(0,c); bb = Math.min(W,bb); d = Math.min(H,d); return bb<=a||d<=c ? 0 : I[d*(W+1)+bb]-I[c*(W+1)+bb]-I[d*(W+1)+a]+I[c*(W+1)+a]; };
+  const clear = (x,y) => { const i = (y|0)*W+(x|0); return i>=0 && i<b.length && rd[i]<128 && wa[i]<128 && wl[i]<128 && b[i]>127; };
+  let shade = '', tops = '';
+  for(let gy=0;gy<H;gy+=19) for(let gx=0;gx<W;gx+=19){
+    const cx = gx+9+hash(gx,gy,71)*2, cy = gy+9+hash(gx,gy,72)*2;
+    if(!clear(cx,cy) || hash(gx,gy,73)<.1) continue;
+    const r = 20, dx = sum(cx,cy-r,cx+r,cy+r)-sum(cx-r,cy-r,cx,cy+r), dy = sum(cx-r,cy,cx+r,cy+r)-sum(cx-r,cy-r,cx+r,cy);
+    const ang = dx||dy ? Math.atan2(dy,dx) : Math.round(hash(gx,gy,74)*3)*Math.PI/12;
+    const hw = 5.5+hash(gx,gy,75)*3.2, hl = 5+hash(gx,gy,76)*3, c = Math.cos(ang), s = Math.sin(ang);
+    const pts = [[-hw,-hl],[hw,-hl],[hw,hl],[-hw,hl]].map(([u,v]) => [cx+u*c-v*s,cy+u*s+v*c]);
+    if(!pts.every(p => clear(p[0],p[1]))) continue;
+    const d = 'M'+pts.map(p => Math.round(p[0]*K)+' '+Math.round(p[1]*K)).join('L')+'Z';
+    tops += '<path d="'+d+'"/>'; shade += '<path d="'+d+'" transform="translate(4 5)"/>';
+  }
+  return '<g fill="'+PAL.ink+'">'+shade+'</g><g fill="'+PAL.building+'" stroke="'+PAL.ink+'" stroke-width="2.2" stroke-linejoin="round">'+tops+'</g>';
+}
+function draw(){
+  const {W,H,K} = T, VW = W*K, VH = H*K, ink = PAL.ink; let body;
+  const frame = '<rect x="44" y="44" width="'+(VW-88)+'" height="'+(VH-88)+'" fill="none" stroke="'+ink+'" stroke-width="7"/><rect x="62" y="62" width="'+(VW-124)+'" height="'+(VH-124)+'" fill="none" stroke="'+ink+'" stroke-width="2"/>';
+  const water = memo('water',['water'],() => pathOf(contours(bin(read('water'),127),8),.7));
+  const road = memo('road',['road'],() => pathOf(contours(bin(read('road'),127),6),.7));
+  if(doc.template === 'world'){
+    const coast = memo('coast',['land'],() => pathOf(contours(bin(read('land'),127),16),1.25));
+    const fp = memo('fp',['forest','land'],() => { const m = erode(dilate(bin(read('forest'),70),7),7), l = read('land'); for(let i=0;i<m.length;i++) if(l[i]<128) m[i] = 0; return pathOf(contours(erode(m,2),40),2); });
+    const marks = memo('marks',['forest','mountain','hills','land','water'],() => markSvg(false));
+    const rings = PAL.rings.map(([w,c,o]) => '<path d="'+coast+'" fill="none" stroke="'+c+'" stroke-width="'+w+'" stroke-linejoin="round" opacity="'+o+'"/>').join('');
+    body = '<rect width="'+VW+'" height="'+VH+'" fill="'+PAL.sea+'"/>'+rings+
+      '<path d="'+coast+'" fill="'+PAL.land+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="2.6" stroke-linejoin="round"/>'+
+      '<path d="'+water+'" fill="'+PAL.river+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1.2"/>'+
+      '<path d="'+fp+'" fill="'+PAL.forest+'" fill-rule="evenodd" opacity=".55"/>'+
+      '<path d="'+road+'" fill="'+ink+'" fill-rule="evenodd"/>'+
+      '<g>'+marks+'</g>'+compass(VW-310,VH-340,150);
+  } else {
+    const fields = memo('fields',['fields'],() => pathOf(contours(bin(read('fields'),127),16),1.5));
+    const fp = memo('fp',['forest'],() => pathOf(contours(erode(dilate(bin(read('forest'),70),6),6),40),2));
+    const wall = memo('wall',['wall'],() => pathOf(contours(bin(read('wall'),127),8),1.1));
+    const blds = memo('blds',['buildings','road','water','wall'],buildingsSvg);
+    const blocks = memo('blocks',['blocks'],() => pathOf(contours(bin(read('blocks'),127),10),1));
+    const marks = memo('marks',['forest','road','water','buildings'],() => markSvg(true));
+    body = '<rect width="'+VW+'" height="'+VH+'" fill="'+PAL.land+'"/>'+
+      '<path d="'+fields+'" fill="#ded09f" fill-rule="evenodd"/><path d="'+fields+'" fill="url(#hatch)" fill-rule="evenodd"/>'+
+      '<path d="'+water+'" fill="'+PAL.river+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1.6"/>'+
+      '<path d="'+fp+'" fill="'+PAL.forest+'" fill-rule="evenodd" opacity=".55"/>'+
+      '<path d="'+road+'" fill="'+PAL.street+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1.5"/>'+
+      '<path d="'+blocks+'" fill="'+ink+'" fill-rule="evenodd" transform="translate(4 5)"/><path d="'+blocks+'" fill="'+PAL.building+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="2.2" stroke-linejoin="round"/>'+
+      blds+'<path d="'+wall+'" fill="'+ink+'" fill-rule="evenodd"/><g>'+marks+'</g>'+(doc.compass === false ? '' : compass(VW-210,VH-230,100));
+  }
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+VW+' '+VH+'" width="'+VW+'" height="'+VH+'"><title>'+esc(doc.title)+'</title><defs>'+defs()+'</defs>'+body+frame+'</svg>';
+}
+let lastSvg = '';
+function refresh(){
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    lastSvg = draw();
+    const next = URL.createObjectURL(new Blob([lastSvg],{type:'image/svg+xml'}));
+    art.onload = () => { if(url) URL.revokeObjectURL(url); url = next; octx.clearRect(0,0,over.width,over.height); };
+    art.src = next;
+  },30);
+}
+
+/* ---------- document ---------- */
+function touch(id){ ver[id] = (ver[id]||0)+1; delete data[id]; }
+function setTool(l){ tool = l; size = l.size; $('#size').value = size; syncTools(); }
+function syncTools(){
+  $('#sizev').textContent = size;
+  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', tool && b.dataset.id === tool.id));
+  $('#paint').classList.toggle('on',!erasing); $('#erase').classList.toggle('on',erasing);
+  $('#erase').textContent = tool && tool.erase ? tool.erase : 'Erase';
+  $('#undo').disabled = !undo.length; $('#redo').disabled = !redo.length;
+}
+function buildTools(){
+  const box = $('#tools'); box.textContent = '';
+  T.layers.forEach(l => {
+    const b = document.createElement('button'); b.className = 'tool'; b.dataset.id = l.id;
+    const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = l.color;
+    b.append(sw,document.createTextNode(l.label)); b.onclick = () => setTool(l); box.appendChild(b);
+  });
+  $('#order').textContent = T.order;
+}
+function loadImage(src){ return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src+'?'+Date.now(); }); }
+async function open(meta,blank){
+  doc = {id:meta.id,title:meta.title,template:meta.template,isNew:!!blank,compass:meta.compass !== false}; T = Object.assign({},TEMPLATES[meta.template]);
+  if(meta.w && meta.h){ T.W = meta.w; T.H = meta.h; }
+  masks = {}; data = {}; cache = {}; ver = {}; undo = []; redo = []; dirty = !!blank;
+  $('#title').value = doc.title; over.width = T.W; over.height = T.H;
+  for(const l of T.layers){
+    const c = document.createElement('canvas'); c.width = T.W; c.height = T.H;
+    const x = c.getContext('2d',{willReadFrequently:true}); x.fillStyle = '#000'; x.fillRect(0,0,T.W,T.H);
+    if(!blank){ const i = await loadImage('/mapdocs/'+doc.id+'/'+l.id+'.png'); if(i) x.drawImage(i,0,0,T.W,T.H); }
+    masks[l.id] = c;
+  }
+  buildTools(); setTool(T.layers.find(l => l.id === 'road')); erasing = false; syncTools(); fitView(); lastSvg = draw();
+  await new Promise(res => { art.onload = res; art.src = URL.createObjectURL(new Blob([lastSvg],{type:'image/svg+xml'})); });
+  loadPins(); say('');
+}
+async function loadPins(){
+  const p = $('#pins'); p.textContent = '';
+  const r = await fetch('/api/locations',{cache:'no-store'}); if(!r.ok) return;
+  (await r.json()).locations.filter(l => l.map === doc.id).forEach(l => {
+    const d = document.createElement('div'); d.className = 'p'+(l.revealed ? '' : ' h'); d.style.left = l.x+'%'; d.style.top = l.y+'%';
+    const t = document.createElement('i'); t.textContent = l.name; d.appendChild(t); p.appendChild(d);
+  });
+}
+async function list(selectId){
+  docs = (await (await fetch('/api/mapdocs',{cache:'no-store'})).json()).docs;
+  const p = $('#pick'); p.textContent = '';
+  docs.forEach(d => { const o = document.createElement('option'); o.value = d.id; o.textContent = d.title+(d.template === 'town' ? ' (town)' : ''); p.appendChild(o); });
+  if(selectId) p.value = selectId;
+}
+async function save(useIt){
+  doc.title = $('#title').value.trim(); if(!doc.title){ say('Give the map a name first.'); return; }
+  say('Saving…'); lastSvg = draw();
+  const m = {}; for(const l of T.layers) m[l.id] = masks[l.id].toDataURL('image/png');
+  const r = await fetch('/api/mapdoc/'+doc.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:doc.title,template:doc.template,w:T.W,h:T.H,compass:doc.compass,svg:lastSvg,masks:m,use_on_site:!!useIt})});
+  const j = await r.json().catch(() => ({ok:false,errors:['The server did not answer.']}));
+  if(!j.ok){ say('Not saved: '+(j.errors||[]).join(' ')); return; }
+  dirty = false; doc.isNew = false; await list(doc.id);
+  const where = 'Saved to dm/maps/'+doc.id+'.svg.';
+  say(j.check_ok ? where+(useIt ? ' The site now uses this map locally. Commit and push to publish.' : ' It is not on the site until you click Use on site.') : where+' The leak check FAILED, do not publish:\n'+j.log);
+}
+
+/* ---------- view and painting ---------- */
+function fitView(){
+  const vw = wrap.clientWidth, vh = wrap.clientHeight, s = Math.min(vw/T.W,vh/T.H)*.96;
+  view = {s,x:(vw-T.W*s)/2,y:(vh-T.H*s)/2}; applyView();
+}
+function applyView(){
+  stage.style.width = T.W+'px'; stage.style.height = T.H+'px';
+  stage.style.transform = 'translate('+view.x+'px,'+view.y+'px) scale('+view.s+')';
+  stage.style.setProperty('--inv',String(1/view.s));
+}
+function toMap(e){ const r = stage.getBoundingClientRect(); return [(e.clientX-r.left)/view.s,(e.clientY-r.top)/view.s]; }
+function moveRing(e){
+  const r = wrap.getBoundingClientRect(), d = size*view.s;
+  ring.style.display = spaceDown||pan ? 'none' : 'block'; ring.style.left = e.clientX-r.left+'px'; ring.style.top = e.clientY-r.top+'px'; ring.style.width = ring.style.height = d+'px';
+}
+wrap.addEventListener('pointerdown', e => {
+  if(!doc || e.target.closest('#newbox,#impbox')) return;
+  wrap.setPointerCapture(e.pointerId);
+  if(spaceDown || e.button === 1 || e.button === 2){ pan = {x:e.clientX,y:e.clientY,vx:view.x,vy:view.y}; return; }
+  if(!tool) return;
+  const x = masks[tool.id].getContext('2d',{willReadFrequently:true}), [mx,my] = toMap(e);
+  undo.push({id:tool.id,img:x.getImageData(0,0,T.W,T.H)}); if(undo.length>15) undo.shift(); redo = [];
+  stroke = {x,px:mx,py:my};
+  for(const c of [x,octx]){ c.lineCap = c.lineJoin = 'round'; c.lineWidth = size; c.fillStyle = c.strokeStyle = c === x ? (erasing ? '#000' : '#fff') : (erasing ? 'rgba(255,255,255,.55)' : tool.color); c.globalAlpha = c === x ? 1 : .75; c.beginPath(); c.arc(mx,my,size/2,0,7); c.fill(); }
+});
+wrap.addEventListener('pointermove', e => {
+  moveRing(e);
+  if(pan){ view.x = pan.vx+e.clientX-pan.x; view.y = pan.vy+e.clientY-pan.y; applyView(); return; }
+  if(!stroke) return;
+  const [mx,my] = toMap(e);
+  for(const c of [stroke.x,octx]){ c.beginPath(); c.moveTo(stroke.px,stroke.py); c.lineTo(mx,my); c.stroke(); }
+  stroke.px = mx; stroke.py = my;
+});
+function endStroke(){
+  pan = null; if(!stroke) return; stroke = null; dirty = true;
+  touch(tool.id); syncTools(); refresh();
+}
+wrap.addEventListener('pointerup',endStroke); wrap.addEventListener('pointercancel',endStroke);
+wrap.addEventListener('pointerleave',() => { ring.style.display = 'none'; });
+wrap.addEventListener('contextmenu',e => e.preventDefault());
+wrap.addEventListener('wheel', e => {
+  e.preventDefault(); const r = wrap.getBoundingClientRect(), cx = e.clientX-r.left, cy = e.clientY-r.top;
+  const ns = Math.min(14,Math.max(.1,view.s*Math.exp(-e.deltaY*.0015))), k = ns/view.s;
+  view.x = cx-(cx-view.x)*k; view.y = cy-(cy-view.y)*k; view.s = ns; applyView(); moveRing(e);
+},{passive:false});
+function step(from,to){
+  const u = from.pop(); if(!u) return;
+  const x = masks[u.id].getContext('2d',{willReadFrequently:true});
+  to.push({id:u.id,img:x.getImageData(0,0,T.W,T.H)}); x.putImageData(u.img,0,0); touch(u.id); dirty = true; syncTools(); refresh();
+}
+$('#undo').onclick = () => step(undo,redo); $('#redo').onclick = () => step(redo,undo);
+$('#paint').onclick = () => { erasing = false; syncTools(); }; $('#erase').onclick = () => { erasing = true; syncTools(); };
+$('#size').oninput = e => { size = +e.target.value; if(tool) tool.size = size; syncTools(); };
+$('#showpins').onchange = e => { $('#pins').hidden = !e.target.checked; };
+$('#save').onclick = () => save(false); $('#use').onclick = () => save(true);
+$('#title').oninput = () => { dirty = true; };
+window.addEventListener('keydown', e => {
+  if(/INPUT|SELECT/.test(e.target.tagName) && e.target.type !== 'range' && e.target.type !== 'checkbox') return;
+  const mod = e.metaKey||e.ctrlKey;
+  if(mod && e.key.toLowerCase() === 'z'){ e.preventDefault(); e.shiftKey ? step(redo,undo) : step(undo,redo); }
+  else if(mod && e.key.toLowerCase() === 's'){ e.preventDefault(); save(false); }
+  else if(e.code === 'Space'){ e.preventDefault(); spaceDown = true; wrap.classList.add('pan'); ring.style.display = 'none'; }
+  else if(e.key === 'e' || e.key === 'E'){ erasing = !erasing; syncTools(); }
+  else if(e.key === '['){ size = Math.max(2,size-(size>12?4:1)); $('#size').value = size; syncTools(); }
+  else if(e.key === ']'){ size = Math.min(140,size+(size>=12?4:1)); $('#size').value = size; syncTools(); }
+});
+window.addEventListener('keyup', e => { if(e.code === 'Space'){ spaceDown = false; wrap.classList.remove('pan'); } });
+window.addEventListener('beforeunload', e => { if(dirty){ e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('resize', () => { if(doc) applyView(); });
+$('#pick').onchange = async e => {
+  if(dirty && !confirm('You have unsaved changes. Open another map anyway?')){ e.target.value = doc.id; return; }
+  const m = docs.find(d => d.id === e.target.value); if(m){ say('Opening…'); await open(m); }
+};
+$('#new').onclick = () => { $('#newbox').hidden = false; $('#nname').value = ''; $('#nname').focus(); };
+$('#ncancel').onclick = () => { $('#newbox').hidden = true; };
+$('#ncreate').onclick = async () => {
+  const name = $('#nname').value.trim(), id = slug(name);
+  if(!id){ say('Give the new map a name.'); return; }
+  if(docs.some(d => d.id === id)){ say('A map with that name already exists.'); return; }
+  $('#newbox').hidden = true;
+  const meta = {id,title:name,template:$('#ntype').value};
+  await open(meta,true);
+  docs.push(meta); const o = document.createElement('option'); o.value = id; o.textContent = name+(meta.template === 'town' ? ' (town)' : ''); $('#pick').appendChild(o); $('#pick').value = id;
+  say('New map started. Click Save to keep it.');
+};
+/* ---------- import a town map image ---------- */
+const JOBS = [['','Ground (leave plain)'],['water','Water'],['road','Street'],['blocks','Buildings'],['fields','Farm fields'],['forest','Trees'],['wall','Ink lines']];
+let imp = null;
+function quantize(px,n,k){
+  const step = Math.max(1,Math.floor(n/40000)), s = [];
+  for(let i=0;i<n;i+=step) s.push([px[i*4],px[i*4+1],px[i*4+2]]);
+  const d2 = (a,b) => (a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2, C = [s[0].slice()];
+  while(C.length<k){ let best = 0, bd = -1; for(let i=0;i<s.length;i+=3){ let m = 1e12; for(const c of C) m = Math.min(m,d2(s[i],c)); if(m>bd){ bd = m; best = i; } } C.push(s[best].slice()); }
+  for(let it=0;it<12;it++){
+    const sum = C.map(() => [0,0,0,0]);
+    for(const p of s){ let bi = 0, bd = 1e12; C.forEach((c,i) => { const d = d2(p,c); if(d<bd){ bd = d; bi = i; } }); const q = sum[bi]; q[0] += p[0]; q[1] += p[1]; q[2] += p[2]; q[3]++; }
+    sum.forEach((q,i) => { if(q[3]) C[i] = [q[0]/q[3],q[1]/q[3],q[2]/q[3]]; });
+  }
+  const lab = new Uint8Array(n), count = new Array(k).fill(0);
+  for(let i=0;i<n;i++){ const r = px[i*4], g = px[i*4+1], b = px[i*4+2]; let bi = 0, bd = 1e12; for(let j=0;j<k;j++){ const c = C[j], d = (r-c[0])**2+(g-c[1])**2+(b-c[2])**2; if(d<bd){ bd = d; bi = j; } } lab[i] = bi; count[bi]++; }
+  return {C,lab:majority(lab,k),count};
+}
+function majority(lab,k){
+  const {W,H} = T, out = lab.slice(), tally = new Uint8Array(k);
+  for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
+    tally.fill(0); let best = lab[y*W+x], top = 0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ const v = lab[(y+dy)*W+x+dx]; if(++tally[v]>top){ top = tally[v]; best = v; } }
+    out[y*W+x] = top>=5 ? best : lab[y*W+x];
+  }
+  return out;
+}
+function guess(C,count,total){
+  const lum = c => .3*c[0]+.59*c[1]+.11*c[2], order = C.map((c,i) => i).sort((a,b) => count[b]-count[a]), jobs = new Array(C.length).fill('blocks'), ground = order[0];
+  jobs[ground] = '';
+  // black-on-white line art: the grays are only the soft edges of ink lines
+  if(lum(C[ground])>230 && C.every(c => Math.max(...c)-Math.min(...c)<14)) return C.map((c,i) => i !== ground && lum(c)<190 ? 'wall' : '');
+  let waterDone = false;
+  C.map((c,i) => i).sort((a,b) => lum(C[a])-lum(C[b])).forEach(i => {
+    if(i === ground) return;
+    const c = C[i], l = lum(c), sat = Math.max(...c)-Math.min(...c), share = count[i]/total;
+    if(c[2]>c[0]+14 && c[2]>=c[1]-6){ jobs[i] = 'water'; waterDone = true; }
+    else if(c[1]>c[0]+8 && c[1]>c[2]+8) jobs[i] = 'forest';
+    else if(l<70) jobs[i] = 'wall';
+    else if(!waterDone && l<lum(C[ground])*.62 && share>.06 && sat<50){ jobs[i] = 'water'; waterDone = true; }
+    else if(Math.abs(l-lum(C[ground]))<26 && sat<45) jobs[i] = '';
+  });
+  return jobs;
+}
+function applyImport(){
+  const {W,H} = T, n = W*H, out = {};
+  imp.jobs.forEach(j => { if(j && !out[j]) out[j] = new Uint8ClampedArray(n*4); });
+  for(let i=0;i<n;i++){ const j = imp.jobs[imp.lab[i]]; if(j){ const a = out[j]; a[i*4] = a[i*4+1] = a[i*4+2] = 255; } }
+  for(const l of T.layers){
+    const x = masks[l.id].getContext('2d',{willReadFrequently:true}); x.fillStyle = '#000'; x.fillRect(0,0,W,H);
+    if(out[l.id]){ const a = out[l.id]; for(let i=3;i<a.length;i+=4) a[i] = 255; x.putImageData(new ImageData(a,W,H),0,0); }
+    touch(l.id);
+  }
+  undo = []; redo = []; dirty = true; syncTools(); refresh();
+}
+function renderImport(){
+  const box = $('#improws'), total = imp.lab.length; box.textContent = '';
+  $('#impkv').textContent = imp.C.length;
+  imp.C.map((c,i) => i).sort((a,b) => imp.count[b]-imp.count[a]).forEach(i => {
+    const c = imp.C[i], row = document.createElement('div'); row.className = 'irow';
+    const sw = document.createElement('span'); sw.className = 'c'; sw.style.background = 'rgb('+c.map(Math.round).join(',')+')';
+    const pc = document.createElement('span'); pc.className = 'pc'; pc.textContent = Math.round(imp.count[i]/total*100)+'%';
+    const sel = document.createElement('select'); sel.setAttribute('aria-label','Use this color as');
+    JOBS.forEach(([v,t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+    sel.value = imp.jobs[i]; sel.onchange = () => { imp.jobs[i] = sel.value; applyImport(); };
+    row.append(sw,pc,sel); box.appendChild(row);
+  });
+}
+function runImport(k){
+  const n = T.W*T.H, q = quantize(imp.px,n,k);
+  imp.C = q.C; imp.lab = q.lab; imp.count = q.count; imp.jobs = guess(q.C,q.count,n);
+  renderImport(); applyImport();
+}
+async function importFile(file,name){
+  if(!file || !/^image\//.test(file.type)){ say('Drop a PNG, JPG or WebP image.'); return; }
+  if(dirty && doc && !confirm('You have unsaved changes. Start an import anyway?')) return;
+  say('Reading the image…');
+  const bmp = await createImageBitmap(file).catch(() => null);
+  if(!bmp){ say('That image could not be read.'); return; }
+  const long = 1400, f = long/Math.max(bmp.width,bmp.height), W = Math.round(bmp.width*f), H = Math.round(bmp.height*f);
+  const base = (name || file.name.replace(/\.[^.]+$/,'')).replace(/[-_]+/g,' ').trim();
+  let title = base.charAt(0).toUpperCase()+base.slice(1)+' Atlas', id = slug(title), n = 2;
+  while(docs.some(d => d.id === id)){ id = slug(title)+'-'+n; n++; }
+  const meta = {id,title,template:'town',w:W,h:H,compass:false};
+  await open(meta,true);
+  docs.push(meta); const o = document.createElement('option'); o.value = id; o.textContent = title+' (town)'; $('#pick').appendChild(o); $('#pick').value = id;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d',{willReadFrequently:true}); x.imageSmoothingQuality = 'high'; x.drawImage(bmp,0,0,W,H);
+  imp = {px:x.getImageData(0,0,W,H).data};
+  $('#impbox').hidden = false; $('#impk').value = 6; runImport(6);
+  say('Imported. Check the colors on the right, then Save.');
+}
+$('#imp').onclick = () => $('#impfile').click();
+$('#impfile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if(f) importFile(f); };
+$('#impk').oninput = e => { if(imp) runImport(+e.target.value); };
+$('#impdone').onclick = () => { $('#impbox').hidden = true; imp = null; };
+wrap.addEventListener('dragover',e => { e.preventDefault(); wrap.classList.add('dropping'); });
+wrap.addEventListener('dragleave',() => wrap.classList.remove('dropping'));
+wrap.addEventListener('drop',e => { e.preventDefault(); wrap.classList.remove('dropping'); const f = e.dataTransfer.files[0]; if(f) importFile(f); });
+list().then(async () => {
+  if(docs.length){ $('#pick').value = docs[0].id; await open(docs[0]); }
+  else $('#new').click();
+}).catch(() => say('Could not reach the studio server.'));
+window.nephlandStudio = {get doc(){ return doc; }, get svg(){ return lastSvg; }, importFile, get jobs(){ return imp && {C:imp.C.map(c=>c.map(Math.round)),count:imp.count,jobs:imp.jobs}; }};
+})();
+</script>
+</body>
+</html>

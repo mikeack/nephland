@@ -27,6 +27,20 @@ Click **+ Add pin**, then click the map, fill in the form and save. Click any pi
 player site and runs the leak check. Then commit and push to publish. The editor only answers on
 this computer and is never part of the published site.
 
+## Paint maps
+
+With `python3 nephland.py edit` running, open http://localhost:8800/studio. Pick a map, or click
+**New map** and choose a world or town map, then paint with the brushes on the left. Land, rivers,
+roads, forests, mountains and hills are separate layers, and town maps have streets, buildings,
+fields, trees and walls. Roads and streets always draw under trees and buildings.
+
+To convert an existing town map, drag an image onto the studio or click **Import town map**. The
+studio samples its main colors and guesses what each one is. Correct any guess in the panel and the
+map updates. Then touch up with the brushes and save.
+
+**Save** keeps your layers in `dm/mapdocs/` and writes `dm/maps/<id>.svg`. **Use on site** also
+points the site at that map. New maps start hidden, so reveal them when players should see them.
+
 ## Reveal something to your players
 
 ```

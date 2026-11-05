@@ -18,6 +18,7 @@ css.textContent = `
 .edbar{position:absolute;left:12px;bottom:12px;z-index:6;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .edbar button{background:var(--ember);color:#fff;border:0;border-radius:8px;height:40px;padding:0 14px;cursor:pointer;font:inherit}
 .edbar button.alt{background:rgba(29,24,18,.92);border:1px solid var(--line);color:var(--ink)}
+.edbar .studio{background:rgba(29,24,18,.92);border:1px solid var(--line);border-radius:8px;height:40px;line-height:38px;padding:0 14px;color:var(--ink);text-decoration:none}
 .edbar .msg{background:rgba(29,24,18,.92);border:1px solid var(--dm);border-radius:8px;padding:8px 12px;font-size:.85rem;max-width:360px}
 #viewport.placing{cursor:crosshair}
 .pin.draft{pointer-events:none}
@@ -40,7 +41,8 @@ document.head.appendChild(css);
 const bar = document.createElement('div'); bar.className = 'edbar';
 const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.textContent = '+ Add pin';
 const msg = document.createElement('span'); msg.className = 'msg'; msg.hidden = true;
-bar.append(addBtn, msg);
+const studio = document.createElement('a'); studio.href = '/studio'; studio.textContent = 'Map studio'; studio.className = 'studio';
+bar.append(addBtn, studio, msg);
 els.wrap.appendChild(bar);
 $('#mode').textContent = 'DM editor · saves to dm/';
 document.querySelector('.hint').textContent = 'Editor: click “+ Add pin”, then click the map. Click any pin to edit it. Drag to pan, scroll to zoom.';

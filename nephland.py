@@ -10,6 +10,7 @@ Commands:
   hide <id>...     Hide a location and/or map by id, then rebuild + check
   serve [--dm]     Build and serve locally at http://localhost:8000
   edit [--port N]  Open the pin editor at http://localhost:8800 (add, move, edit, delete pins)
+                   The map studio is at http://localhost:8800/studio (paint world and town maps)
   hooks            Install the git pre-commit safety hook (run once per clone)
   date             Show the in-world date players see on the site
   date +N | -N     Move the in-world date forward/back N days, rebuild, check
@@ -472,10 +473,71 @@ def validate_locations(locs, maps):
     return clean, errs
 
 
+MAPDOCS = SRC / "mapdocs"
+MAP_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+
+
+def list_mapdocs():
+    docs = []
+    if MAPDOCS.exists():
+        for p in sorted(MAPDOCS.glob("*/map.json")):
+            meta = json.loads(p.read_text(encoding="utf-8"))
+            docs.append({"id": p.parent.name, "title": meta.get("title", p.parent.name), "template": meta.get("template", "world"),
+                         "w": meta.get("w"), "h": meta.get("h"), "compass": meta.get("compass", True)})
+    return docs
+
+
+def save_mapdoc(mid, body):
+    """Write a studio map: layer PNGs, its metadata and the rendered SVG. Returns a list of errors."""
+    import base64
+    title, template, svg, masks = body.get("title"), body.get("template"), body.get("svg"), body.get("masks")
+    if not MAP_ID.fullmatch(mid):
+        return ["Map id must be lowercase letters, numbers and hyphens"]
+    if not isinstance(title, str) or not title.strip():
+        return ["Give the map a name"]
+    if template not in ("world", "town"):
+        return ["Unknown map type"]
+    if not isinstance(svg, str) or not svg.startswith("<svg") or re.search(r"<script|\son\w+=", svg, re.I):
+        return ["The drawn map was not a clean SVG"]
+    if not isinstance(masks, dict):
+        return ["No layers were sent"]
+    size = {k: body[k] for k in ("w", "h") if isinstance(body.get(k), int) and 100 <= body[k] <= 2000}
+    if body.get("compass") is False:
+        size["compass"] = False
+    decoded = {}
+    for name, url in masks.items():
+        if not re.fullmatch(r"[a-z]+", name) or not isinstance(url, str) or not url.startswith("data:image/png;base64,"):
+            return [f"Bad layer {name!r}"]
+        data = base64.b64decode(url.split(",", 1)[1])
+        if data[:8] != b"\x89PNG\r\n\x1a\n":
+            return [f"Layer {name!r} is not a PNG"]
+        decoded[name] = data
+    d = MAPDOCS / mid
+    d.mkdir(parents=True, exist_ok=True)
+    for name, data in decoded.items():
+        (d / f"{name}.png").write_bytes(data)
+    (d / "map.json").write_text(json.dumps({"title": title.strip(), "template": template, **size}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (SRC / "maps").mkdir(exist_ok=True)
+    (SRC / "maps" / f"{mid}.svg").write_text(svg, encoding="utf-8")
+    return []
+
+
+def use_on_site(mid, title):
+    """Point the site's map entry at the studio SVG. New maps start hidden from players."""
+    maps, locs = load()
+    entry = next((m for m in maps["maps"] if m["id"] == mid), None)
+    if entry:
+        entry["image"] = f"{mid}.svg"
+    else:
+        maps["maps"].append({"id": mid, "title": title.strip(), "image": f"{mid}.svg", "parent": maps["root"], "revealed": False})
+    save(maps, locs)
+
+
 def edit(port):
     import contextlib, io, os
     build(True)
     editor_js = ROOT / "viewer" / "editor.js"
+    studio_html = ROOT / "viewer" / "studio.html"
     allowed_hosts = {f"localhost:{port}", f"127.0.0.1:{port}"}
 
     def rebuild():
@@ -528,6 +590,28 @@ def edit(port):
             if path == "/api/locations":
                 maps, locs = load()
                 return self.send_json(200, {"locations": locs, "maps": maps["maps"], "types": PIN_TYPES, "source": SRC.name})
+            if path == "/api/mapdocs":
+                return self.send_json(200, {"docs": list_mapdocs()})
+            if path == "/studio":
+                body = studio_html.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            hit = re.fullmatch(r"/mapdocs/([a-z0-9-]+)/([a-z]+)\.png", path)
+            if hit:
+                p = MAPDOCS / hit[1] / f"{hit[2]}.png"
+                if not p.is_file():
+                    return self.send_error(404)
+                body = p.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if path == "/editor.js":
                 body = editor_js.read_bytes()
                 self.send_response(200)
@@ -550,6 +634,25 @@ def edit(port):
         def do_POST(self):
             if not self.local_only():
                 return
+            hit = re.fullmatch(r"/api/mapdoc/([a-z0-9-]+)", self.path)
+            if hit:
+                if "application/json" not in (self.headers.get("Content-Type") or ""):
+                    return self.send_json(415, {"ok": False, "errors": ["Expected JSON"]})
+                n = int(self.headers.get("Content-Length") or 0)
+                if not 0 < n <= 40_000_000:
+                    return self.send_json(413, {"ok": False, "errors": ["Map is too large"]})
+                try:
+                    body = json.loads(self.rfile.read(n).decode("utf-8"))
+                except ValueError:
+                    return self.send_json(400, {"ok": False, "errors": ["Not valid JSON"]})
+                errs = save_mapdoc(hit[1], body) if isinstance(body, dict) else ["Expected an object"]
+                if errs:
+                    return self.send_json(400, {"ok": False, "errors": errs})
+                used = bool(body.get("use_on_site"))
+                if used:
+                    use_on_site(hit[1], body["title"])
+                ok, log = rebuild()
+                return self.send_json(200, {"ok": True, "check_ok": ok, "log": log, "used": used})
             if self.path != "/api/locations":
                 return self.send_error(404)
             if "application/json" not in (self.headers.get("Content-Type") or ""):
