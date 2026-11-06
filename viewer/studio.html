@@ -74,7 +74,7 @@ kbd{font:.75rem ui-monospace,Menlo,monospace;background:var(--panel2);border:1px
   <input id="title" aria-label="Map name" placeholder="Map name">
   <button id="new">New map</button>
   <button id="imp">Import town map</button>
-  <input id="impfile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+  <input id="impfile" type="file" accept="image/png,image/jpeg,image/webp,application/json,.json" hidden>
   <button id="undo" disabled title="Undo (Cmd+Z)">Undo</button>
   <button id="redo" disabled title="Redo (Shift+Cmd+Z)">Redo</button>
   <span class="grow"></span>
@@ -819,19 +819,63 @@ function runImport(k){
   imp.C = q.C; imp.lab = q.lab; imp.count = q.count; imp.jobs = guess(q.C,q.count,n);
   renderImport(); retrace();
 }
-async function importFile(file,name){
-  if(!file || !/^image\//.test(file.type)){ say('Drop a PNG, JPG or WebP image.'); return; }
-  if(dirty && doc && !confirm('You have unsaved changes. Start an import anyway?')) return;
-  say('Reading the image…');
-  const bmp = await createImageBitmap(file).catch(() => null);
-  if(!bmp){ say('That image could not be read.'); return; }
-  const long = 1400, f = long/Math.max(bmp.width,bmp.height), W = Math.round(bmp.width*f), H = Math.round(bmp.height*f);
-  const base = (name || file.name.replace(/\.[^.]+$/,'')).replace(/[-_]+/g,' ').trim();
+/* Watabou's Medieval Fantasy City Generator exports exact shapes as JSON, so nothing needs tracing.
+   Its y axis points north, the opposite of the map's. */
+async function importTown(file){
+  let parts = null;
+  try { const j = JSON.parse(await file.text()); if(j.type === 'FeatureCollection' && Array.isArray(j.features)) parts = Object.fromEntries(j.features.map(f => [f.id,f])); } catch(e){ /* reported below */ }
+  if(!parts || !parts.values || parts.values.generator !== 'mfcg' || !parts.buildings){ say('That JSON is not a town from the Medieval Fantasy City Generator.'); return; }
+  const shapes = id => (parts[id] && parts[id].coordinates) || [], lines = id => (parts[id] && parts[id].geometries) || [];
+  const blds = shapes('buildings').concat(shapes('prisms')).map(p => p[0]), pts = blds.flat();
+  lines('walls').forEach(g => pts.push(...(g.type === 'Polygon' ? g.coordinates.flat() : g.coordinates)));
+  if(!pts.length){ say('That town has no buildings to import.'); return; }
+  // frames the town itself: a few farmhouses far outside it would otherwise shrink everything
+  const mid = a => a.slice().sort((p,q) => p-q)[a.length>>1], cx = mid(pts.map(p => p[0])), cy = mid(pts.map(p => p[1]));
+  const far = pts.map(p => Math.hypot(p[0]-cx,p[1]-cy)).sort((p,q) => p-q), reach = far[Math.floor(far.length*.85)]*1.6;
+  const walled = lines('walls').flatMap(g => g.type === 'Polygon' ? g.coordinates.flat() : g.coordinates);
+  const town = pts.filter(p => Math.hypot(p[0]-cx,p[1]-cy) <= reach).concat(walled);
+  const x0 = Math.min(...town.map(p => p[0])), x1 = Math.max(...town.map(p => p[0])), y0 = Math.min(...town.map(p => p[1])), y1 = Math.max(...town.map(p => p[1]));
+  const pad = Math.max(x1-x0,y1-y0)*.1, spanX = x1-x0+pad*2, spanY = y1-y0+pad*2, f = 1400/Math.max(spanX,spanY);
+  const W = Math.max(300,Math.round(spanX*f)), H = Math.max(300,Math.round(spanY*f));
+  const at = p => [(p[0]-x0+pad)*f+(W-spanX*f)/2,(y1-p[1]+pad)*f+(H-spanY*f)/2];
+  await startImport(file.name.replace(/\.[^.]+$/,''),W,H);
+  const K = T.K, trace = (x,pts,close) => { pts.forEach((p,i) => { const q = at(p); i ? x.lineTo(q[0],q[1]) : x.moveTo(q[0],q[1]); }); if(close) x.closePath(); };
+  const layer = id => { const x = masks[id].getContext('2d',{willReadFrequently:true}); x.fillStyle = x.strokeStyle = '#fff'; x.lineCap = x.lineJoin = 'round'; return x; };
+  const fill = (x,polys) => { polys.forEach(p => { x.beginPath(); p.forEach(r => trace(x,r,true)); x.fill('evenodd'); }); };
+  const stroke = (x,g,min) => { x.lineWidth = Math.max(min,(g.width||4)*f); x.beginPath(); if(g.type === 'Polygon') g.coordinates.forEach(r => trace(x,r,true)); else trace(x,g.coordinates); x.stroke(); };
+  const road = layer('road'); fill(road,shapes('squares')); lines('roads').forEach(g => stroke(road,g,2)); lines('planks').forEach(g => stroke(road,g,1.5));
+  fill(layer('fields'),shapes('fields'));
+  const forest = layer('forest'); fill(forest,shapes('greens')); shapes('trees').forEach(p => { const q = at(p); forest.beginPath(); forest.arc(q[0],q[1],Math.max(2,4*f),0,7); forest.fill(); });
+  const wall = layer('wall'), tower = (parts.values.towerRadius||0)*f;
+  lines('walls').forEach(g => { stroke(wall,g,2); (g.type === 'Polygon' ? g.coordinates.flat() : g.coordinates).forEach(p => { const q = at(p); wall.beginPath(); wall.arc(q[0],q[1],tower,0,7); wall.fill(); }); });
+  // water is drawn at double size, then outlined as one shape so rivers flow into the sea
+  const c = document.createElement('canvas'); c.width = W*K; c.height = H*K;
+  const x = c.getContext('2d',{willReadFrequently:true}); x.scale(K,K); x.fillStyle = x.strokeStyle = '#fff'; x.lineCap = x.lineJoin = 'round';
+  fill(x,shapes('water')); lines('rivers').forEach(g => stroke(x,g,2));
+  const a = x.getImageData(0,0,W*K,H*K).data, wet = new Uint8Array(W*K*H*K); for(let i=0;i<wet.length;i++) wet[i] = a[i*4+3] > 127 ? 1 : 0;
+  const n = v => v.toFixed(1);
+  doc.vectors = {b:blds.map(r => 'M'+r.map(p => { const q = at(p); return n(q[0]*K)+' '+n(q[1]*K); }).join('L')+'Z').join(''),wa:curvePath(contours(wet,40,W*K,H*K),2,1),w:'',l:'',sw:1.8,count:blds.length};
+  T.layers.forEach(l => touch(l.id)); dirty = true; syncTools(); refresh();
+  say('Imported '+blds.length.toLocaleString()+' buildings. Touch it up, then Save.');
+}
+async function startImport(name,W,H){
+  const base = name.replace(/[-_]+/g,' ').trim();
   let title = base.charAt(0).toUpperCase()+base.slice(1)+' Atlas', id = slug(title), n = 2;
   while(docs.some(d => d.id === id)){ id = slug(title)+'-'+n; n++; }
   const meta = {id,title,template:'town',w:W,h:H,compass:false};
   await open(meta,true);
   docs.push(meta); const o = document.createElement('option'); o.value = id; o.textContent = title+' (town)'; $('#pick').appendChild(o); $('#pick').value = id;
+}
+async function importFile(file,name){
+  const isTown = file && (/\.json$/i.test(file.name) || file.type === 'application/json');
+  if(!file || !(isTown || /^image\//.test(file.type))){ say('Drop a PNG, JPG or WebP image, or a JSON town.'); return; }
+  if(dirty && doc && !confirm('You have unsaved changes. Start an import anyway?')) return;
+  if(isTown){ await importTown(file); return; }
+  say('Reading the image…');
+  const bmp = await createImageBitmap(file).catch(() => null);
+  if(!bmp){ say('That image could not be read.'); return; }
+  const long = 1400, f = long/Math.max(bmp.width,bmp.height), W = Math.round(bmp.width*f), H = Math.round(bmp.height*f);
+  await startImport(name || file.name.replace(/\.[^.]+$/,''),W,H);
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const x = c.getContext('2d',{willReadFrequently:true}); x.imageSmoothingQuality = 'high'; x.drawImage(bmp,0,0,W,H);
   imp = {px:x.getImageData(0,0,W,H).data};

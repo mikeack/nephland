@@ -48,6 +48,10 @@ Click **Bridge** under Stamps and drag from one bank to the other to lay a bridg
 **Street** or **Grand** or set the width yourself. Click a bridge later to move, rotate, resize or
 delete it.
 
+Towns from [Watabou's generator](https://watabou.github.io/city-generator/) import best as JSON:
+right-click the town, choose **Export as > JSON**, then drop the file on the studio. Its filename
+becomes the map's name, and buildings come across exactly with no color matching.
+
 To convert an existing town map, drag an image onto the studio or click **Import town map**. The
 studio samples its main colors and guesses what each one is. Correct any guess in the panel and the
 map updates. Then touch up with the brushes and save.
