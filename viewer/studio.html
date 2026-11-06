@@ -88,6 +88,7 @@ kbd{font:.75rem ui-monospace,Menlo,monospace;background:var(--panel2);border:1px
     <input id="size" type="range" min="2" max="140" value="30" aria-label="Brush size">
     <h2>View</h2>
     <label class="check"><input type="checkbox" id="showpins" checked> Show pins</label>
+    <label class="check" id="fineopt" hidden><input type="checkbox" id="fine"> Fine buildings</label>
     <p class="hint">Drag to paint. Scroll to zoom. Hold <kbd>Space</kbd> and drag to move around.<br><kbd>E</kbd> erase, <kbd>[</kbd> <kbd>]</kbd> brush size.</p>
     <p class="hint" id="order"></p>
   </aside>
@@ -147,8 +148,8 @@ const slug = s => s.normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().repla
 function hash(a,b,c){ let t = Math.imul(a,73856093)^Math.imul(b,19349663)^Math.imul(c,83492791); t = Math.imul(t^(t>>>13),1274126177); return ((t^(t>>>16))>>>0)/4294967296; }
 
 /* ---------- geometry ---------- */
-function box(src,r,want){
-  const {W,H} = T, tmp = new Uint8Array(W*H), out = new Uint8Array(W*H);
+function box(src,r,want,W=T.W,H=T.H){
+  const tmp = new Uint8Array(W*H), out = new Uint8Array(W*H);
   for(let y=0;y<H;y++){ const o = y*W; let n = 0;
     for(let x=-r;x<W+r;x++){ const a = x+r; if(a<W && src[o+a]===want) n++; const b = x-r-1; if(b>=0 && b<W && src[o+b]===want) n--; if(x>=0 && x<W && n) tmp[o+x] = 1; } }
   for(let x=0;x<W;x++){ let n = 0;
@@ -157,8 +158,8 @@ function box(src,r,want){
   return out;
 }
 const dilate = (m,r) => box(m,r,1), erode = (m,r) => box(m,r,0);
-function contours(m,minlen){
-  const {W,H} = T, key = (x,y) => y*(W+2)+x, nxt = new Map();
+function contours(m,minlen,W=T.W,H=T.H){
+  const key = (x,y) => y*(W+2)+x, nxt = new Map();
   const add = (a,b) => { const l = nxt.get(a); if(l) l.push(b); else nxt.set(a,[b]); };
   for(let y=0;y<H;y++){ const o = y*W;
     for(let x=0;x<W;x++){ if(!m[o+x]) continue;
@@ -201,6 +202,35 @@ function pathOf(loops,eps){
       const c = p[j], a = toward(c,p[(j+n-1)%n]), b = toward(c,p[(j+1)%n]);
       d += (j ? 'L' : 'M')+a[0]+' '+a[1]+'Q'+c[0]*K+' '+c[1]*K+' '+b[0]+' '+b[1];
     }
+    d += 'Z';
+  }
+  return d;
+}
+
+/* Sharp polygons for traced shapes: no corner rounding, so straight edges stay straight. */
+function polyPath(loops,eps,s,ox=0,oy=0){
+  let d = '';
+  for(const lp0 of loops){
+    let top = 0; for(let i=1;i<lp0.length;i++) if(lp0[i][0]>lp0[top][0]) top = i;
+    const lp = lp0.slice(top).concat(lp0.slice(0,top),[lp0[top]]), h = lp.length>>1;
+    const p = rdp(lp.slice(0,h+1),eps).slice(0,-1).concat(rdp(lp.slice(h),eps).slice(0,-1));
+    if(p.length<3) continue;
+    d += 'M'+p.map(q => ((q[0]+ox)*s).toFixed(1)+' '+((q[1]+oy)*s).toFixed(1)).join('L')+'Z';
+  }
+  return d;
+}
+
+/* Flowing curves for natural edges such as shorelines. */
+function curvePath(loops,eps,s){
+  let d = '';
+  for(const lp0 of loops){
+    let top = 0; for(let i=1;i<lp0.length;i++) if(lp0[i][0]>lp0[top][0]) top = i;
+    const lp = lp0.slice(top).concat(lp0.slice(0,top),[lp0[top]]), h = lp.length>>1;
+    const p = rdp(lp.slice(0,h+1),eps).slice(0,-1).concat(rdp(lp.slice(h),eps).slice(0,-1));
+    if(p.length<3) continue;
+    const m = (a,b) => ((a[0]+b[0])/2*s).toFixed(1)+' '+((a[1]+b[1])/2*s).toFixed(1), last = p[p.length-1];
+    d += 'M'+m(last,p[0]);
+    for(let j=0;j<p.length;j++) d += 'Q'+(p[j][0]*s).toFixed(1)+' '+(p[j][1]*s).toFixed(1)+' '+m(p[j],p[(j+1)%p.length]);
     d += 'Z';
   }
   return d;
@@ -292,6 +322,59 @@ function buildingsSvg(){
   }
   return '<g fill="'+PAL.ink+'">'+shade+'</g><g fill="'+PAL.building+'" stroke="'+PAL.ink+'" stroke-width="2.2" stroke-linejoin="round">'+tops+'</g>';
 }
+/* Drop specks: keep only connected shapes at least minSpan pixels long. */
+function longOnly(m,W,H,minSpan){
+  const seen = new Uint8Array(m.length), out = new Uint8Array(m.length), st = new Int32Array(m.length);
+  for(let start=0;start<m.length;start++){
+    if(!m[start] || seen[start]) continue;
+    let top = 0, x0 = W, x1 = 0, y0 = H, y1 = 0; st[top++] = start; seen[start] = 1; const cells = [];
+    while(top){
+      const c = st[--top]; cells.push(c); const x = c%W, y = (c-x)/W;
+      if(x<x0) x0 = x; if(x>x1) x1 = x; if(y<y0) y0 = y; if(y>y1) y1 = y;
+      for(const q of [x>0?c-1:-1, x<W-1?c+1:-1, y>0?c-W:-1, y<H-1?c+W:-1]) if(q>=0 && m[q] && !seen[q]){ seen[q] = 1; st[top++] = q; }
+    }
+    if(Math.max(x1-x0,y1-y0)>=minSpan) for(const c of cells) out[c] = 1;
+  }
+  return out;
+}
+/* Trace buildings one at a time from the full-size source, so each stays a clean shape. */
+function traceVectors(){
+  const {px,W:FW,H:FH} = imp.full, n = FW*FH, C = imp.C, k = C.length, s = T.W*T.K/FW;
+  const isFill = imp.jobs.map(j => j === 'blocks'), isInk = imp.jobs.map(j => j === 'wall' || j === 'thick'), isWater = imp.jobs.map(j => j === 'water');
+  if(!isFill.some(Boolean)) return null;
+  const fill = new Uint8Array(n), ink = new Uint8Array(n), wet = new Uint8Array(n);
+  const lut = new Uint8Array(32768);   // nearest color by 5-bit RGB, which is fast at 17 million pixels
+  for(let i=0;i<32768;i++){ const r = (i>>10)*8+4, g = ((i>>5)&31)*8+4, b = (i&31)*8+4; let bi = 0, bd = 1e12; for(let j=0;j<k;j++){ const c = C[j], d = (r-c[0])**2+(g-c[1])**2+(b-c[2])**2; if(d<bd){ bd = d; bi = j; } } lut[i] = bi; }
+  for(let i=0,p=0;i<n;i++,p+=4){ const r = px[p], g = px[p+1], b = px[p+2], l = lut[(r>>3)<<10|(g>>3)<<5|(b>>3)]; if(isFill[l]) fill[i] = 1; if(isInk[l]) ink[i] = 1; const v = .3*r+.59*g+.11*b; if(v>=48 && v<=128) wet[i] = 1; }
+  // shaving one pixel removes the gray halo that runs along every black line
+  const core = box(fill,1,0,FW,FH), seen = new Uint8Array(n), st = new Int32Array(n);
+  const minArea = Math.max(16,Math.round(FW*FW/1.6e6)); let b = '', count = 0;
+  for(let start=0;start<n;start++){
+    if(!core[start] || seen[start]) continue;
+    let top = 0, x0 = FW, x1 = 0, y0 = FH, y1 = 0; st[top++] = start; seen[start] = 1; const cells = [];
+    while(top){
+      const c = st[--top]; cells.push(c); const x = c%FW, y = (c-x)/FW;
+      if(x<x0) x0 = x; if(x>x1) x1 = x; if(y<y0) y0 = y; if(y>y1) y1 = y;
+      if(x>0 && core[c-1] && !seen[c-1]){ seen[c-1] = 1; st[top++] = c-1; }
+      if(x<FW-1 && core[c+1] && !seen[c+1]){ seen[c+1] = 1; st[top++] = c+1; }
+      if(y>0 && core[c-FW] && !seen[c-FW]){ seen[c-FW] = 1; st[top++] = c-FW; }
+      if(y<FH-1 && core[c+FW] && !seen[c+FW]){ seen[c+FW] = 1; st[top++] = c+FW; }
+    }
+    if(cells.length<minArea) continue;
+    const w = x1-x0+1, h = y1-y0+1, sub = new Uint8Array(w*h);
+    for(const c of cells){ const x = c%FW, y = (c-x)/FW; sub[(y-y0)*w+x-x0] = 1; }
+    const d = polyPath(contours(sub,6,w,h),1.7,s,x0,y0);
+    if(d){ b += d; count++; }
+  }
+  const keep = Math.max(3,Math.round(FW/1350));
+  // walls are only traced when asked for: guessing them from line weight marks ordinary gaps as walls
+  const walls = imp.jobs.includes('thick') ? longOnly(box(box(ink,keep,0,FW,FH),keep,1,FW,FH),FW,FH,Math.round(FW/110)) : new Uint8Array(n);
+  // water is one solid shape: opening drops thin line edges that share its gray, closing fills
+  // the shading bands and joins rivers to the sea, and the last step reaches the shoreline
+  const opened = box(box(wet,5,0,FW,FH),5,1,FW,FH);
+  const solid = box(box(box(opened,8,1,FW,FH),8,0,FW,FH),3,1,FW,FH);
+  return {b, wa:curvePath(contours(longOnly(solid,FW,FH,Math.round(FW/40)),80,FW,FH),Math.max(3,FW/1100),s), w:polyPath(contours(walls,40,FW,FH),2.2,s), l:'', sw:FW>3000 ? 2.6 : 1.8, count};
+}
 function draw(){
   const {W,H,K} = T, VW = W*K, VH = H*K, ink = PAL.ink; let body;
   const frame = '<rect x="44" y="44" width="'+(VW-88)+'" height="'+(VH-88)+'" fill="none" stroke="'+ink+'" stroke-width="7"/><rect x="62" y="62" width="'+(VW-124)+'" height="'+(VH-124)+'" fill="none" stroke="'+ink+'" stroke-width="2"/>';
@@ -317,10 +400,13 @@ function draw(){
     const marks = memo('marks',['forest','road','water','buildings'],() => markSvg(true));
     body = '<rect width="'+VW+'" height="'+VH+'" fill="'+PAL.land+'"/>'+
       '<path d="'+fields+'" fill="#ded09f" fill-rule="evenodd"/><path d="'+fields+'" fill="url(#hatch)" fill-rule="evenodd"/>'+
-      '<path d="'+water+'" fill="'+PAL.river+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1.6"/>'+
+      '<path d="'+(doc.vectors && doc.vectors.wa ? doc.vectors.wa : '')+water+'" fill="'+PAL.river+'" fill-rule="evenodd"/>'+
       '<path d="'+fp+'" fill="'+PAL.forest+'" fill-rule="evenodd" opacity=".55"/>'+
       '<path d="'+road+'" fill="'+PAL.street+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1.5"/>'+
-      '<path d="'+blocks+'" fill="'+ink+'" fill-rule="evenodd" transform="translate(4 5)"/><path d="'+blocks+'" fill="'+PAL.building+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="2.2" stroke-linejoin="round"/>'+
+      (doc.vectors && doc.vectors.b ? '<defs><path id="blds" d="'+doc.vectors.b+'" stroke-linejoin="miter"/></defs><use href="#blds" fill="none" stroke="'+ink+'" stroke-width="'+(doc.vectors.sw+1.3)+'"/><use href="#blds" fill="'+PAL.building+'" stroke="'+PAL.building+'" stroke-width="'+doc.vectors.sw+'"/><path d="'+doc.vectors.w+'" fill="'+ink+'" fill-rule="evenodd"/>' : '')+
+      (doc.fine
+        ? '<path d="'+blocks+'" fill="'+ink+'" fill-rule="evenodd" opacity=".35" transform="translate(2 3)"/><path d="'+blocks+'" fill="'+PAL.building+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1" stroke-linejoin="round"/>'
+        : '<path d="'+blocks+'" fill="'+ink+'" fill-rule="evenodd" transform="translate(4 5)"/><path d="'+blocks+'" fill="'+PAL.building+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="2.2" stroke-linejoin="round"/>')+
       blds+'<path d="'+wall+'" fill="'+ink+'" fill-rule="evenodd"/><g>'+marks+'</g>'+(doc.compass === false ? '' : compass(VW-210,VH-230,100));
   }
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+VW+' '+VH+'" width="'+VW+'" height="'+VH+'"><title>'+esc(doc.title)+'</title><defs>'+defs()+'</defs>'+body+frame+'</svg>';
@@ -357,7 +443,8 @@ function buildTools(){
 }
 function loadImage(src){ return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src+'?'+Date.now(); }); }
 async function open(meta,blank){
-  doc = {id:meta.id,title:meta.title,template:meta.template,isNew:!!blank,compass:meta.compass !== false}; T = Object.assign({},TEMPLATES[meta.template]);
+  doc = {id:meta.id,title:meta.title,template:meta.template,isNew:!!blank,compass:meta.compass !== false,fine:!!meta.fine};
+  $('#fine').checked = doc.fine; $('#fineopt').hidden = meta.template !== 'town'; T = Object.assign({},TEMPLATES[meta.template]);
   if(meta.w && meta.h){ T.W = meta.w; T.H = meta.h; }
   masks = {}; data = {}; cache = {}; ver = {}; undo = []; redo = []; dirty = !!blank;
   $('#title').value = doc.title; over.width = T.W; over.height = T.H;
@@ -367,6 +454,7 @@ async function open(meta,blank){
     if(!blank){ const i = await loadImage('/mapdocs/'+doc.id+'/'+l.id+'.png'); if(i) x.drawImage(i,0,0,T.W,T.H); }
     masks[l.id] = c;
   }
+  if(!blank && doc.template === 'town'){ const v = await fetch('/mapdocs/'+doc.id+'/vectors.json',{cache:'no-store'}).then(r => r.json()).catch(() => ({})); if(v.b) doc.vectors = v; }
   buildTools(); setTool(T.layers.find(l => l.id === 'road')); erasing = false; syncTools(); fitView(); lastSvg = draw();
   await new Promise(res => { art.onload = res; art.src = URL.createObjectURL(new Blob([lastSvg],{type:'image/svg+xml'})); });
   loadPins(); say('');
@@ -389,12 +477,12 @@ async function save(useIt){
   doc.title = $('#title').value.trim(); if(!doc.title){ say('Give the map a name first.'); return; }
   say('Saving…'); lastSvg = draw();
   const m = {}; for(const l of T.layers) m[l.id] = masks[l.id].toDataURL('image/png');
-  const r = await fetch('/api/mapdoc/'+doc.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:doc.title,template:doc.template,w:T.W,h:T.H,compass:doc.compass,svg:lastSvg,masks:m,use_on_site:!!useIt})});
+  const r = await fetch('/api/mapdoc/'+doc.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:doc.title,template:doc.template,w:T.W,h:T.H,compass:doc.compass,fine:doc.fine,vectors:doc.vectors||undefined,svg:lastSvg,masks:m,use_on_site:!!useIt})});
   const j = await r.json().catch(() => ({ok:false,errors:['The server did not answer.']}));
   if(!j.ok){ say('Not saved: '+(j.errors||[]).join(' ')); return; }
   dirty = false; doc.isNew = false; await list(doc.id);
   const where = 'Saved to dm/maps/'+doc.id+'.svg.';
-  say(j.check_ok ? where+(useIt ? ' The site now uses this map locally. Commit and push to publish.' : ' It is not on the site until you click Use on site.') : where+' The leak check FAILED, do not publish:\n'+j.log);
+  say(j.check_ok ? where+(useIt ? ' The site now uses this map locally. Click Publish in the pin editor to send it live.' : ' It is not on the site until you click Use on site.') : where+' The leak check FAILED, do not publish:\n'+j.log);
 }
 
 /* ---------- view and painting ---------- */
@@ -450,6 +538,7 @@ function step(from,to){
 $('#undo').onclick = () => step(undo,redo); $('#redo').onclick = () => step(redo,undo);
 $('#paint').onclick = () => { erasing = false; syncTools(); }; $('#erase').onclick = () => { erasing = true; syncTools(); };
 $('#size').oninput = e => { size = +e.target.value; if(tool) tool.size = size; syncTools(); };
+$('#fine').onchange = e => { doc.fine = e.target.checked; dirty = true; refresh(); };
 $('#showpins').onchange = e => { $('#pins').hidden = !e.target.checked; };
 $('#save').onclick = () => save(false); $('#use').onclick = () => save(true);
 $('#title').oninput = () => { dirty = true; };
@@ -483,7 +572,7 @@ $('#ncreate').onclick = async () => {
   say('New map started. Click Save to keep it.');
 };
 /* ---------- import a town map image ---------- */
-const JOBS = [['','Ground (leave plain)'],['water','Water'],['road','Street'],['blocks','Buildings'],['fields','Farm fields'],['forest','Trees'],['wall','Ink lines']];
+const JOBS = [['','Ground (leave plain)'],['water','Water'],['road','Street'],['blocks','Buildings'],['fields','Farm fields'],['forest','Trees'],['wall','Ink lines'],['thick','Walls (thick lines only)']];
 let imp = null;
 function quantize(px,n,k){
   const step = Math.max(1,Math.floor(n/40000)), s = [];
@@ -527,14 +616,31 @@ function guess(C,count,total){
 }
 function applyImport(){
   const {W,H} = T, n = W*H, out = {};
-  imp.jobs.forEach(j => { if(j && !out[j]) out[j] = new Uint8ClampedArray(n*4); });
-  for(let i=0;i<n;i++){ const j = imp.jobs[imp.lab[i]]; if(j){ const a = out[j]; a[i*4] = a[i*4+1] = a[i*4+2] = 255; } }
+  const traced = doc.vectors && doc.vectors.b;
+  const job = l => traced && ['blocks','wall','thick','water'].includes(imp.jobs[l]) ? '' : imp.jobs[l];
+  imp.jobs.forEach((j,l) => { const v = job(l); if(v && !out[v]) out[v] = new Uint8ClampedArray(n*4); });
+  for(let i=0;i<n;i++){ const j = job(imp.lab[i]); if(j){ const a = out[j]; a[i*4] = a[i*4+1] = a[i*4+2] = 255; } }
+  if(out.thick){   // opening removes lines 1-2 pixels wide and keeps heavy strokes such as town walls
+    const m = new Uint8Array(n); for(let i=0;i<n;i++) m[i] = out.thick[i*4] ? 1 : 0;
+    const kept = dilate(erode(m,1),1), w = out.wall || (out.wall = new Uint8ClampedArray(n*4));
+    for(let i=0;i<n;i++) if(kept[i]) w[i*4] = w[i*4+1] = w[i*4+2] = 255;
+  }
   for(const l of T.layers){
     const x = masks[l.id].getContext('2d',{willReadFrequently:true}); x.fillStyle = '#000'; x.fillRect(0,0,W,H);
     if(out[l.id]){ const a = out[l.id]; for(let i=3;i<a.length;i+=4) a[i] = 255; x.putImageData(new ImageData(a,W,H),0,0); }
     touch(l.id);
   }
   undo = []; redo = []; dirty = true; syncTools(); refresh();
+}
+function retrace(){
+  if(!imp || !imp.full) return;
+  say('Tracing each building…');
+  setTimeout(() => {
+    const v = traceVectors();
+    doc.vectors = v;
+    applyImport();
+    say(v ? 'Traced '+v.count.toLocaleString()+' buildings. Check the colors on the right, then Save.' : 'Imported. Check the colors on the right, then Save.');
+  },30);
 }
 function renderImport(){
   const box = $('#improws'), total = imp.lab.length; box.textContent = '';
@@ -545,14 +651,14 @@ function renderImport(){
     const pc = document.createElement('span'); pc.className = 'pc'; pc.textContent = Math.round(imp.count[i]/total*100)+'%';
     const sel = document.createElement('select'); sel.setAttribute('aria-label','Use this color as');
     JOBS.forEach(([v,t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
-    sel.value = imp.jobs[i]; sel.onchange = () => { imp.jobs[i] = sel.value; applyImport(); };
+    sel.value = imp.jobs[i]; sel.onchange = () => { imp.jobs[i] = sel.value; retrace(); };
     row.append(sw,pc,sel); box.appendChild(row);
   });
 }
 function runImport(k){
   const n = T.W*T.H, q = quantize(imp.px,n,k);
   imp.C = q.C; imp.lab = q.lab; imp.count = q.count; imp.jobs = guess(q.C,q.count,n);
-  renderImport(); applyImport();
+  renderImport(); retrace();
 }
 async function importFile(file,name){
   if(!file || !/^image\//.test(file.type)){ say('Drop a PNG, JPG or WebP image.'); return; }
@@ -570,6 +676,9 @@ async function importFile(file,name){
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const x = c.getContext('2d',{willReadFrequently:true}); x.imageSmoothingQuality = 'high'; x.drawImage(bmp,0,0,W,H);
   imp = {px:x.getImageData(0,0,W,H).data};
+  const fc = document.createElement('canvas'); fc.width = bmp.width; fc.height = bmp.height;
+  const fx = fc.getContext('2d',{willReadFrequently:true}); fx.drawImage(bmp,0,0);
+  imp.full = {px:fx.getImageData(0,0,bmp.width,bmp.height).data,W:bmp.width,H:bmp.height};
   $('#impbox').hidden = false; $('#impk').value = 6; runImport(6);
   say('Imported. Check the colors on the right, then Save.');
 }

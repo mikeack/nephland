@@ -483,7 +483,7 @@ def list_mapdocs():
         for p in sorted(MAPDOCS.glob("*/map.json")):
             meta = json.loads(p.read_text(encoding="utf-8"))
             docs.append({"id": p.parent.name, "title": meta.get("title", p.parent.name), "template": meta.get("template", "world"),
-                         "w": meta.get("w"), "h": meta.get("h"), "compass": meta.get("compass", True)})
+                         "w": meta.get("w"), "h": meta.get("h"), "compass": meta.get("compass", True), "fine": meta.get("fine", False)})
     return docs
 
 
@@ -504,6 +504,8 @@ def save_mapdoc(mid, body):
     size = {k: body[k] for k in ("w", "h") if isinstance(body.get(k), int) and 100 <= body[k] <= 2000}
     if body.get("compass") is False:
         size["compass"] = False
+    if body.get("fine") is True:
+        size["fine"] = True
     decoded = {}
     for name, url in masks.items():
         if not re.fullmatch(r"[a-z]+", name) or not isinstance(url, str) or not url.startswith("data:image/png;base64,"):
@@ -519,6 +521,9 @@ def save_mapdoc(mid, body):
     (d / "map.json").write_text(json.dumps({"title": title.strip(), "template": template, **size}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (SRC / "maps").mkdir(exist_ok=True)
     (SRC / "maps" / f"{mid}.svg").write_text(svg, encoding="utf-8")
+    vectors = body.get("vectors")
+    if isinstance(vectors, dict) and all(isinstance(v, (str, int, float)) for v in vectors.values()):
+        (d / "vectors.json").write_text(json.dumps(vectors), encoding="utf-8")
     return []
 
 
@@ -531,6 +536,117 @@ def use_on_site(mid, title):
     else:
         maps["maps"].append({"id": mid, "title": title.strip(), "image": f"{mid}.svg", "parent": maps["root"], "revealed": False})
     save(maps, locs)
+
+
+# ---------------------------------------------------------------- publish
+PUBLISH_MESSAGE = "Update player site"   # fixed on purpose: never put place names in public history
+LIVE_DATA_URL = f"https://{DOMAIN}/data/map-data.json"
+
+
+def git(*args, timeout=30):
+    import os
+    env = dict(os.environ, PATH="/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", ""), GIT_TERMINAL_PROMPT="0")
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout, env=env)
+
+
+BACKUP_ROOT = Path.home() / "Documents" / "50-59 Play" / "51 D&D" / "Nephland" / "DM Backups"
+BACKUP_KEEP = 10
+BACKUP_NAME = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}")
+
+
+def dm_fingerprint():
+    import hashlib
+    h = hashlib.sha256()
+    for p in sorted(SRC.rglob("*")):
+        if p.is_file() and p.name != ".DS_Store":
+            h.update(str(p.relative_to(SRC)).encode("utf-8"))
+            h.update(p.read_bytes())
+    return h.hexdigest()
+
+
+def backup_dm():
+    """Copy dm/ to a dated folder in iCloud. Never raises: a backup problem must not block publishing."""
+    import datetime
+    if SRC.name != "dm":
+        return {"status": "skipped", "detail": "There is no dm/ folder to back up."}
+    if not BACKUP_ROOT.parent.is_dir():
+        return {"status": "failed", "detail": f"Could not find {BACKUP_ROOT.parent}"}
+    tmp = None
+    try:
+        BACKUP_ROOT.mkdir(exist_ok=True)
+        print_ = dm_fingerprint()
+        existing = sorted(p for p in BACKUP_ROOT.iterdir() if p.is_dir() and BACKUP_NAME.fullmatch(p.name))
+        if existing:
+            mark = existing[-1] / ".fingerprint"
+            if mark.is_file() and mark.read_text().strip() == print_:
+                return {"status": "unchanged", "detail": existing[-1].name}
+        name = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        tmp = BACKUP_ROOT / f".incomplete-{name}"
+        shutil.copytree(SRC, tmp, ignore=shutil.ignore_patterns(".DS_Store"))
+        (tmp / ".fingerprint").write_text(print_ + "\n")
+        tmp.rename(BACKUP_ROOT / name)
+        tmp = None
+        existing.append(BACKUP_ROOT / name)
+        for old in existing[:-BACKUP_KEEP]:
+            shutil.rmtree(old)
+        return {"status": "saved", "detail": name}
+    except OSError as e:
+        if tmp and tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)
+        return {"status": "failed", "detail": str(e)}
+
+
+def player_changes():
+    """What players would see change, comparing the last commit with the current docs/."""
+    new = json.loads((PLAYER_OUT / "data" / "map-data.json").read_text(encoding="utf-8"))
+    shown = git("show", "HEAD:docs/data/map-data.json")
+    old = json.loads(shown.stdout) if shown.returncode == 0 else {"maps": [], "locations": []}
+    before, after = {l["id"]: l for l in old["locations"]}, {l["id"]: l for l in new["locations"]}
+    maps_before, maps_after = {m["id"]: m for m in old["maps"]}, {m["id"]: m for m in new["maps"]}
+    changed = [after[i]["name"] for i in after if i in before and after[i] != before[i]]
+    changed += [maps_after[i]["title"] + " map" for i in maps_after if i in maps_before and maps_after[i] != maps_before[i]]
+    files = [line[3:] for line in git("status", "--porcelain", "--", "docs").stdout.splitlines()]
+    other = [p for p in files if not p.startswith("docs/maps/") and p != "docs/data/map-data.json"]
+    ahead = git("rev-list", "--count", "@{u}..HEAD")
+    return {
+        "added": [after[i]["name"] for i in after if i not in before] + [maps_after[i]["title"] + " map" for i in maps_after if i not in maps_before],
+        "removed": [before[i]["name"] for i in before if i not in after] + [maps_before[i]["title"] + " map" for i in maps_before if i not in maps_after],
+        "changed": changed,
+        "calendar": "docs/data/calendar-data.json" in other,
+        "site": any(p == "docs/index.html" for p in other),
+        "files": len(files),
+        "unpushed": int(ahead.stdout.strip() or 0) if ahead.returncode == 0 else 0,
+    }
+
+
+def publish():
+    """Commit docs/ only, then push. Returns (ok, message)."""
+    branch = git("branch", "--show-current").stdout.strip()
+    if branch != "main":
+        return False, f"You're on the branch {branch!r}. The site publishes from main."
+    staged = [p for p in git("diff", "--cached", "--name-only").stdout.splitlines() if not p.startswith("docs/")]
+    if staged:
+        return False, "Other files are staged for commit, so nothing was published: " + ", ".join(staged)
+    if git("status", "--porcelain", "--", "docs").stdout.strip():
+        git("add", "--", "docs")
+        done = git("commit", "-m", PUBLISH_MESSAGE, timeout=60)
+        if done.returncode != 0:
+            return False, "The commit was stopped: " + (done.stdout + done.stderr).strip()[-600:]
+    if int(git("rev-list", "--count", "@{u}..HEAD").stdout.strip() or 0) == 0:
+        return False, "There is nothing new to publish."
+    pushed = git("push", "origin", "main", timeout=90)
+    if pushed.returncode != 0:
+        return False, "Saved here, but the push failed. Click Publish to try again: " + pushed.stderr.strip()[-400:]
+    return True, git("rev-parse", "--short", "HEAD").stdout.strip()
+
+
+def live_matches():
+    """True once the public site serves the same player data as docs/."""
+    import time, urllib.request
+    req = urllib.request.Request(f"{LIVE_DATA_URL}?t={int(time.time())}", headers={"User-Agent": "nephland-publish", "Cache-Control": "no-cache"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        live = json.loads(r.read().decode("utf-8"))
+    return live == json.loads((PLAYER_OUT / "data" / "map-data.json").read_text(encoding="utf-8"))
 
 
 def edit(port):
@@ -590,6 +706,14 @@ def edit(port):
             if path == "/api/locations":
                 maps, locs = load()
                 return self.send_json(200, {"locations": locs, "maps": maps["maps"], "types": PIN_TYPES, "source": SRC.name})
+            if path == "/api/publish":
+                ok, log = rebuild()
+                return self.send_json(200, {"check_ok": ok, "log": log, **player_changes()})
+            if path == "/api/publish/live":
+                try:
+                    return self.send_json(200, {"live": live_matches()})
+                except Exception:
+                    return self.send_json(200, {"live": False})
             if path == "/api/mapdocs":
                 return self.send_json(200, {"docs": list_mapdocs()})
             if path == "/studio":
@@ -600,6 +724,10 @@ def edit(port):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            hit = re.fullmatch(r"/mapdocs/([a-z0-9-]+)/vectors\.json", path)
+            if hit:
+                p = MAPDOCS / hit[1] / "vectors.json"
+                return self.send_json(200, json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {})
             hit = re.fullmatch(r"/mapdocs/([a-z0-9-]+)/([a-z]+)\.png", path)
             if hit:
                 p = MAPDOCS / hit[1] / f"{hit[2]}.png"
@@ -634,6 +762,19 @@ def edit(port):
         def do_POST(self):
             if not self.local_only():
                 return
+            if self.path == "/api/publish":
+                if "application/json" not in (self.headers.get("Content-Type") or ""):
+                    return self.send_json(415, {"ok": False, "error": "Expected JSON"})
+                saved = backup_dm()   # first, so a failed publish still leaves a backup
+                ok, log = rebuild()
+                if not ok:
+                    return self.send_json(409, {"ok": False, "backup": saved, "error": "The leak check failed, so nothing was published:\n" + log})
+                done, detail = publish()
+                return self.send_json(200 if done else 409, {"ok": done, "backup": saved, "commit": detail} if done else {"ok": False, "backup": saved, "error": detail})
+            if self.path == "/api/backup":
+                if "application/json" not in (self.headers.get("Content-Type") or ""):
+                    return self.send_json(415, {"status": "failed", "detail": "Expected JSON"})
+                return self.send_json(200, backup_dm())
             hit = re.fullmatch(r"/api/mapdoc/([a-z0-9-]+)", self.path)
             if hit:
                 if "application/json" not in (self.headers.get("Content-Type") or ""):

@@ -20,6 +20,13 @@ css.textContent = `
 .edbar button.alt{background:rgba(29,24,18,.92);border:1px solid var(--line);color:var(--ink)}
 .edbar .studio{background:rgba(29,24,18,.92);border:1px solid var(--line);border-radius:8px;height:40px;line-height:38px;padding:0 14px;color:var(--ink);text-decoration:none}
 .edbar .msg{background:rgba(29,24,18,.92);border:1px solid var(--dm);border-radius:8px;padding:8px 12px;font-size:.85rem;max-width:360px}
+.pubbox{position:absolute;left:12px;bottom:64px;z-index:7;width:340px;max-width:calc(100% - 24px);max-height:calc(100% - 80px);overflow:auto;background:var(--panel);border:1px solid var(--gold);border-radius:10px;padding:14px}
+.pubbox h4{margin:0 0 6px;color:var(--gold);font-size:1.05rem}
+.pubbox h5{margin:12px 0 3px;font:600 .72rem/1 system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pubbox ul{margin:0;padding-left:18px;font-size:.9rem}
+.pubbox p{margin:6px 0;font-size:.88rem}
+.pubbox .bad{color:var(--ember);white-space:pre-wrap}
+.pubbox .row{display:flex;gap:8px;margin-top:12px}
 #viewport.placing{cursor:crosshair}
 .pin.draft{pointer-events:none}
 .pin.draft .dot{background:#fff;border-color:var(--ember);box-shadow:0 0 0 3px var(--ember),0 2px 6px rgba(0,0,0,.6)}
@@ -49,8 +56,9 @@ document.head.appendChild(css);
 const bar = document.createElement('div'); bar.className = 'edbar';
 const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.textContent = '+ Add pin';
 const msg = document.createElement('span'); msg.className = 'msg'; msg.hidden = true;
+const pubBtn = document.createElement('button'); pubBtn.type = 'button'; pubBtn.textContent = 'Publish'; pubBtn.className = 'alt';
 const studio = document.createElement('a'); studio.href = '/studio'; studio.textContent = 'Map studio'; studio.className = 'studio';
-bar.append(addBtn, studio, msg);
+bar.append(addBtn, pubBtn, studio, msg);
 els.wrap.appendChild(bar);
 $('#mode').textContent = 'DM editor · saves to dm/';
 document.querySelector('.hint').textContent = 'Editor: click “+ Add pin”, then click the map. Click any pin to edit it. Drag to pan, scroll to zoom.';
@@ -265,7 +273,7 @@ function post(list){
     .finally(() => { busy = false; });
 }
 function report(j, what){
-  if(j.check_ok) say(what+' Saved and leak check passed. Players see this after you publish.');
+  if(j.check_ok) say(what+' Saved and leak check passed. Click Publish when you’re ready for players to see it.');
   else say(what+' Saved, but the leak check FAILED. Do not publish until it is fixed:\n'+j.log, true);
 }
 
@@ -298,6 +306,80 @@ function remove(){
     return loadRaw().then(() => reloadView(null)).then(() => report(j, label));
   }).catch(e => renderForm(['Could not reach the editor server. ('+e.message+')']));
 }
+
+/* ---------- publish ---------- */
+let pubBox = null, liveTimer = 0;
+function closePub(){ if(pubBox){ pubBox.remove(); pubBox = null; } }
+function pubPanel(){
+  closePub();
+  pubBox = document.createElement('div'); pubBox.className = 'pubbox'; pubBox.setAttribute('role','dialog'); pubBox.setAttribute('aria-label','Publish to the live site');
+  els.wrap.appendChild(pubBox); return pubBox;
+}
+const el = (tag,text) => { const e = document.createElement(tag); if(text != null) e.textContent = text; return e; };
+function pubList(box,title,items){
+  if(!items.length) return;
+  box.appendChild(el('h5',title));
+  const ul = el('ul'); items.forEach(t => ul.appendChild(el('li',t))); box.appendChild(ul);
+}
+const backupText = b => !b ? '' : ({saved:'Backed up to iCloud.', unchanged:'iCloud backup is already up to date.', skipped:'', failed:'The iCloud backup failed: '+b.detail}[b.status] || '');
+async function runBackup(btn,line){
+  btn.disabled = true; line.textContent = 'Backing up…';
+  const b = await fetch('api/backup',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(x => x.json()).catch(() => ({status:'failed',detail:'Could not reach the editor server.'}));
+  line.textContent = backupText(b); line.classList.toggle('bad', b.status === 'failed'); btn.disabled = b.status !== 'failed';
+}
+async function openPublish(){
+  if(busy || mode) return;
+  clearInterval(liveTimer); const box = pubPanel();
+  box.appendChild(el('h4','Publish to the live site')); box.appendChild(el('p','Rebuilding and running the leak check…'));
+  let j; try { j = await (await fetch('api/publish',{cache:'no-store'})).json(); }
+  catch(e){ box.appendChild(el('p','Could not reach the editor server.')).className = 'bad'; return; }
+  box.textContent = ''; box.appendChild(el('h4','Publish to the live site'));
+  const row = el('div'); row.className = 'row';
+  const go = el('button','Publish now'); go.type = 'button'; go.className = 'btn';
+  const no = el('button','Cancel'); no.type = 'button'; no.className = 'btn alt'; no.onclick = closePub;
+  if(!j.check_ok){
+    box.appendChild(el('p','The leak check failed, so publishing is blocked:')); box.appendChild(el('p',j.log)).className = 'bad';
+    row.appendChild(no); box.appendChild(row); return;
+  }
+  if(!j.files && !j.unpushed){
+    box.appendChild(el('p','Nothing to publish. The live site already matches your map.'));
+    box.appendChild(el('p','Changes to hidden pins and DM notes don’t reach the site, but you can still back them up.'));
+    const line = box.appendChild(el('p',''));
+    const bk = el('button','Back up now'); bk.type = 'button'; bk.className = 'btn'; bk.onclick = () => runBackup(bk,line);
+    row.append(bk,no); box.appendChild(row); return;
+  }
+  box.appendChild(el('p','Leak check passed. Hidden places and DM notes stay off the site. This also saves a backup to iCloud.'));
+  pubList(box,'Players will newly see',j.added);
+  pubList(box,'Players will no longer see',j.removed);
+  pubList(box,'Updated',j.changed);
+  if(j.calendar) pubList(box,'Calendar',['The calendar changed']);
+  if(j.site) pubList(box,'Site',['The site page itself changed']);
+  if(!j.added.length && !j.removed.length && !j.changed.length && !j.calendar && !j.site)
+    box.appendChild(el('p',j.files ? 'Map images changed.' : 'A saved update is still waiting to go out.'));
+  go.onclick = () => runPublish(box,row);
+  row.append(go,no); box.appendChild(row);
+}
+async function runPublish(box,row){
+  row.querySelectorAll('button').forEach(b => { b.disabled = true; });
+  box.textContent = ''; box.appendChild(el('h4','Publishing…')); box.appendChild(el('p','Sending to GitHub.'));
+  let j; try { j = await (await fetch('api/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json(); }
+  catch(e){ j = {ok:false,error:'Could not reach the editor server.'}; }
+  box.textContent = '';
+  const close = el('button','Close'); close.type = 'button'; close.className = 'btn alt'; close.onclick = () => { clearInterval(liveTimer); closePub(); };
+  const r = el('div'); r.className = 'row'; r.appendChild(close);
+  const note = backupText(j.backup);
+  if(!j.ok){ box.appendChild(el('h4','Not published')); box.appendChild(el('p',j.error)).className = 'bad'; if(note) box.appendChild(el('p',note)); box.appendChild(r); return; }
+  box.appendChild(el('h4','Sent to GitHub')); const line = box.appendChild(el('p','Waiting for the live site to update. This usually takes a minute or two.'));
+  if(note){ const n = box.appendChild(el('p',note)); if(j.backup.status === 'failed') n.className = 'bad'; }
+  box.appendChild(r);
+  const start = Date.now();
+  liveTimer = setInterval(async () => {
+    const live = await fetch('api/publish/live',{cache:'no-store'}).then(x => x.json()).catch(() => ({}));
+    if(live.live){ clearInterval(liveTimer); box.querySelector('h4').textContent = 'Live'; line.textContent = 'Your players can see the update now.'; }
+    else if(Date.now()-start > 720000){ clearInterval(liveTimer); line.textContent = 'GitHub is taking longer than usual. It may still finish, so check the site later. If it never updates, click Publish again.'; }
+  },10000);
+}
+pubBtn.onclick = openPublish;
 
 loadRaw().then(() => say('Editor ready. Changes save to '+raw.source+'/locations.json.'))
   .catch(() => say('Could not load locations from the editor server.', true));

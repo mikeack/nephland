@@ -29,6 +29,14 @@ move it or delete it. Each save writes
 player site and runs the leak check. Then commit and push to publish. The editor only answers on
 this computer and is never part of the published site.
 
+Click **Publish** when you're ready. It re-runs the leak check, shows what players will newly see,
+stop seeing and find updated, then sends only the player site to GitHub and tells you when it's live.
+
+Publishing also saves a dated copy of `dm/` to **Documents › 50-59 Play › 51 D&D › Nephland › DM Backups**
+in iCloud, keeping the 10 newest and skipping identical copies. If there's nothing to publish, the
+panel offers **Back up now**, because changes to hidden pins and DM notes never reach the site. To
+restore, copy a dated folder back into this project and name it `dm`.
+
 ## Paint maps
 
 With `python3 nephland.py edit` running, open http://localhost:8800/studio. Pick a map, or click
@@ -40,6 +48,9 @@ To convert an existing town map, drag an image onto the studio or click **Import
 studio samples its main colors and guesses what each one is. Correct any guess in the panel and the
 map updates. Then touch up with the brushes and save.
 
+Buildings are traced one at a time from the full-size image, so a larger source gives cleaner shapes.
+Traced buildings can't be erased with the brushes yet. Paint streets, walls, trees and fields over them.
+
 **Save** keeps your layers in `dm/mapdocs/` and writes `dm/maps/<id>.svg`. **Use on site** also
 points the site at that map. New maps start hidden, so reveal them when players should see them.
 
@@ -48,7 +59,7 @@ points the site at that map. New maps start hidden, so reveal them when players 
 ```
 python3 nephland.py list
 python3 nephland.py reveal hommlet
-git add -A && git commit -m "Reveal Hommlet" && git push
+# then click Publish in the pin editor, or commit and push `docs/` yourself
 ```
 
 ## Move the in-world date forward
