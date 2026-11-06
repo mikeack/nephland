@@ -28,7 +28,15 @@ css.textContent = `
   border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:.92rem}
 .edform textarea{min-height:70px;resize:vertical}
 .edform .dmfield{border-color:var(--dm)}
-.edform .check{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:.92rem;cursor:pointer}
+.swt,.edform label.swt{position:relative;display:flex;gap:10px;align-items:center;margin:12px 0 0;font:inherit;font-size:.92rem;letter-spacing:0;text-transform:none;color:var(--ink);cursor:pointer}
+.swt input{position:absolute;opacity:0;width:1px;height:1px}
+.swt .track{position:relative;flex:none;width:42px;height:24px;border-radius:99px;background:var(--line);transition:background .15s}
+.swt .track::after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:var(--ink);transition:transform .15s}
+.swt input:checked + .track{background:var(--ok)}
+.swt input:checked + .track::after{transform:translateX(18px)}
+.swt input:focus-visible + .track{outline:2px solid var(--ink);outline-offset:2px}
+.swt input:disabled + .track{opacity:.5}
+.swt .note{display:block;color:var(--muted);font-size:.78rem}
 .edform .coords{margin-top:8px;font:.78rem ui-monospace,Menlo,monospace;color:var(--muted)}
 .edform .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .edform .err{margin-top:10px;padding:8px 10px;border:1px solid var(--ember);border-radius:8px;font-size:.85rem;white-space:pre-wrap}
@@ -120,7 +128,39 @@ N.hooks.pinClick = l => {
   N.select(l.id);
   return true;               // in the editor, clicking a pin selects it instead of opening its map
 };
+function visSwitch(on, onchange){
+  const lab = document.createElement('label'); lab.className = 'swt';
+  const input = document.createElement('input'); input.type = 'checkbox'; input.setAttribute('role','switch'); input.checked = on;
+  const track = document.createElement('span'); track.className = 'track';
+  const text = document.createElement('span');
+  const sync = () => { text.textContent = input.checked ? 'Visible to players' : 'Hidden from players'; };
+  input.onchange = () => { sync(); if(onchange) onchange(input); };
+  sync(); lab.append(input, track, text);
+  return {lab, input, text};
+}
+function setVisible(id, on, input){
+  if(busy || !raw) { input.checked = !on; return; }
+  const i = raw.locations.findIndex(x => x.id === id);
+  if(i < 0){ input.checked = !on; say('Could not find '+id+' in dm/locations.json. Reload the page.'); return; }
+  const list = raw.locations.slice(), label = '“'+list[i].name+'” is now '+(on ? 'visible to players.' : 'hidden from players.');
+  list[i] = Object.assign({}, list[i], {revealed:on});
+  input.disabled = true;
+  post(list).then(({status, j}) => {
+    if(status !== 200 || !j.ok) throw new Error((j.errors || ['Save failed ('+status+')']).join(' '));
+    return loadRaw().then(() => reloadView(id)).then(() => report(j, label));
+  }).catch(e => { say('Not saved: '+e.message, true); N.select(id); });
+}
+function mapHidden(mapId){
+  for(let m = raw && raw.maps.find(x => x.id === mapId); m; m = raw.maps.find(x => x.id === m.parent)) if(!m.revealed) return true;
+  return false;
+}
 N.hooks.card = (l, card) => {
+  const sw = visSwitch(!!l.revealed, input => setVisible(l.id, input.checked, input));
+  card.appendChild(sw.lab);
+  if(mapHidden(l.map)){
+    const n = document.createElement('span'); n.className = 'note'; n.textContent = 'This map is hidden, so players won’t see this pin yet.';
+    sw.text.appendChild(n);
+  }
   const row = document.createElement('div'); row.className = 'row';
   const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = 'Edit pin';
   b.onclick = () => startEdit(l.id);
@@ -177,10 +217,8 @@ function renderForm(errors){
 
   const url = field(f, 'Read-more link (optional)', document.createElement('input')); url.type = 'url'; url.value = form.note_url || ''; url.placeholder = 'https://';
 
-  const chk = document.createElement('label'); chk.className = 'check';
-  const rev = document.createElement('input'); rev.type = 'checkbox'; rev.checked = !!form.revealed;
-  chk.append(rev, document.createTextNode('Visible to players'));
-  f.appendChild(chk);
+  const vis = visSwitch(!!form.revealed), rev = vis.input;
+  f.appendChild(vis.lab);
 
   const coords = document.createElement('div'); coords.className = 'coords';
   const mapTitle = (raw.maps.find(m => m.id === form.map) || {}).title || form.map;
@@ -227,7 +265,7 @@ function post(list){
     .finally(() => { busy = false; });
 }
 function report(j, what){
-  if(j.check_ok) say(what+' Saved to dm/ and rebuilt. Leak check passed, ready to publish.');
+  if(j.check_ok) say(what+' Saved and leak check passed. Players see this after you publish.');
   else say(what+' Saved, but the leak check FAILED. Do not publish until it is fixed:\n'+j.log, true);
 }
 

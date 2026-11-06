@@ -15,12 +15,6 @@
    "title": "Err",
    "image": "err.jpg",
    "parent": "world"
-  },
-  {
-   "id": "svellheim",
-   "title": "Svellheim",
-   "image": "svellheim.jpg",
-   "parent": "world"
   }
  ],
  "locations": [
@@ -44,34 +38,6 @@
    "description": "A village in the Central Realm. Some of its people have gone missing."
   },
   {
-   "id": "shireton",
-   "map": "world",
-   "name": "Shireton",
-   "x": 44.8,
-   "y": 54.55,
-   "type": "town",
-   "description": "A town in the Central Realm."
-  },
-  {
-   "id": "deepshire",
-   "map": "world",
-   "name": "Deepshire",
-   "x": 40.15,
-   "y": 56.1,
-   "type": "town",
-   "description": "A town in the Central Realm."
-  },
-  {
-   "id": "svellheim",
-   "map": "world",
-   "name": "Svellheim",
-   "x": 61.15,
-   "y": 18.35,
-   "type": "town",
-   "description": "Capital of the Northern Realm.",
-   "opens": "svellheim"
-  },
-  {
    "id": "drihliri",
    "map": "world",
    "name": "Drihliri",
@@ -79,15 +45,6 @@
    "y": 85.0,
    "type": "town",
    "description": "Capital of the Southern Realm."
-  },
-  {
-   "id": "mylanore",
-   "map": "world",
-   "name": "Mylanore",
-   "x": 68.35,
-   "y": 54.8,
-   "type": "town",
-   "description": "A town in the Southern Realm."
   }
  ]
 }

@@ -21,8 +21,10 @@ Open http://localhost:8000. Needs only Python 3.
 python3 nephland.py edit          # pin editor at http://localhost:8800
 ```
 
-Click **+ Add pin**, then click the map, fill in the form and save. Click any pin and choose
-**Edit pin** to change its text, tick *Visible to players*, move it or delete it. Each save writes
+Click **+ Add pin**, then click the map, fill in the form and save. Click any pin to flip its
+**Visible to players** switch, which saves right away and also hides or shows the town map that
+pin opens, or choose **Edit pin** to change its text,
+move it or delete it. Each save writes
 `dm/locations.json` (the previous version is kept in `dm/locations.backup.json`), rebuilds the
 player site and runs the leak check. Then commit and push to publish. The editor only answers on
 this computer and is never part of the published site.

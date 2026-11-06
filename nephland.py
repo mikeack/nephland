@@ -671,6 +671,17 @@ def edit(port):
             target = SRC / "locations.json"
             if old != clean:
                 shutil.copy(target, SRC / "locations.backup.json")
+            # a town map follows its pin: hide the pin and players can't reach the map either
+            before = {l["id"]: bool(l.get("revealed")) for l in old}
+            linked = False
+            for l in clean:
+                if l.get("opens") and l["opens"] != maps["root"] and l["id"] in before and before[l["id"]] != l["revealed"]:
+                    for m in maps["maps"]:
+                        if m["id"] == l["opens"]:
+                            m["revealed"] = l["revealed"]
+                            linked = True
+            if linked:
+                (SRC / "maps.json").write_text(json.dumps(maps, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             tmp = target.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(clean, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             os.replace(tmp, target)

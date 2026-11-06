@@ -350,7 +350,8 @@ function renderCard(l){
     if(l.dm_notes){ const n = document.createElement('div'); n.textContent = 'DM notes: '+l.dm_notes; n.style.marginTop = '6px'; d.appendChild(n); }
     const tip = document.createElement('div'); tip.style.cssText = 'margin-top:6px;color:var(--muted)';
     tip.textContent = l.revealed ? 'Hide again with:  python3 nephland.py hide '+l.id : 'Reveal with:  python3 nephland.py reveal '+l.id;
-    d.appendChild(tip); c.appendChild(d);
+    if(!hooks.card) d.appendChild(tip);   // the editor shows a switch instead
+    c.appendChild(d);
     if(hooks.card) hooks.card(l, c);
   }
   c.hidden = false;

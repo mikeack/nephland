@@ -45,7 +45,7 @@ with sample data.
 ```
 python3 nephland.py serve --dm      # DM preview at http://localhost:8000 (everything visible)
 python3 nephland.py serve           # exactly what players will see
-python3 nephland.py edit            # pin editor at http://localhost:8800 (add/move/edit/delete pins)
+python3 nephland.py edit            # pin editor at http://localhost:8800 (add/move/edit/hide/delete pins)
 python3 nephland.py list            # every map and location with its revealed status
 python3 nephland.py reveal <id>...  # reveal a location, map and/or calendar event, rebuild, leak-check
 python3 nephland.py hide <id>...    # undo a reveal
@@ -75,6 +75,7 @@ GitHub Pages updates in about a minute.
 
 - `x`, `y` are percentages (0–100) of the map image, from the top-left.
 - `opens` is the id of a map to load when the pin is clicked. Optional.
+  In the pin editor, changing a pin's visibility also changes the map it opens.
 - `type`: `town`, `landmark`, `dungeon`, `tavern`, `shop` (anything else gets the default pin).
 - Ids are lowercase with hyphens, and unique across maps and locations.
 - A map is visible to players only if it **and all its ancestors** are `revealed`.
