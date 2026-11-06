@@ -39,6 +39,12 @@ kbd{font:.75rem ui-monospace,Menlo,monospace;background:var(--panel2);border:1px
 #stage{position:absolute;left:0;top:0;transform-origin:0 0}
 #stage img,#over{position:absolute;inset:0;width:100%;height:100%;display:block;user-select:none;-webkit-user-drag:none}
 #over{pointer-events:none}
+#bover{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#wrap.stamp{cursor:crosshair}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.three button{padding:6px 4px;font-size:.85rem}
+.three button.on{border-color:var(--gold);background:#3a2f1c}
+#bdel{width:100%;margin-top:10px}
 #pins{position:absolute;inset:0;pointer-events:none}
 .p{position:absolute;width:9px;height:9px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--ember);border:1px solid #fff;transform:scale(var(--inv,1))}
 .p i{position:absolute;left:11px;top:-5px;font:600 11px system-ui,sans-serif;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap}
@@ -80,12 +86,31 @@ kbd{font:.75rem ui-monospace,Menlo,monospace;background:var(--panel2);border:1px
   <aside>
     <h2>Paint</h2>
     <div id="tools"></div>
-    <div class="two" style="margin-top:6px">
-      <button id="paint" class="on">Paint</button>
-      <button id="erase">Erase</button>
+    <div id="brushbox">
+      <div class="two" style="margin-top:6px">
+        <button id="paint" class="on">Paint</button>
+        <button id="erase">Erase</button>
+      </div>
+      <h2>Brush size <span id="sizev"></span></h2>
+      <input id="size" type="range" min="2" max="140" value="30" aria-label="Brush size">
     </div>
-    <h2>Brush size <span id="sizev"></span></h2>
-    <input id="size" type="range" min="2" max="140" value="30" aria-label="Brush size">
+    <h2>Stamps</h2>
+    <button id="bridge" class="tool"><span class="sw" style="background:#f1e8d0"></span>Bridge</button>
+    <div id="bpanel" hidden>
+      <div class="three" id="bkinds">
+        <button data-w="2">Foot</button>
+        <button data-w="5">Street</button>
+        <button data-w="9">Grand</button>
+      </div>
+      <h2>Width <span id="bwv"></span></h2>
+      <input id="bw" type="range" min="1" max="24" step="0.5" aria-label="Bridge width">
+      <h2>Length <span id="blv"></span></h2>
+      <input id="bl" type="range" min="4" max="160" step="1" aria-label="Bridge length">
+      <h2>Angle <span id="bav"></span></h2>
+      <input id="ba" type="range" min="0" max="179" step="1" aria-label="Bridge angle">
+      <button id="bdel" disabled>Delete bridge</button>
+      <p class="hint">Drag from one bank to the other to lay a bridge. Click a bridge to select it, then drag it to move it, drag the round handle to rotate it, or drag its ends to change the length.<br><kbd>,</kbd> <kbd>.</kbd> rotate, <kbd>[</kbd> <kbd>]</kbd> width, <kbd>Delete</kbd> remove, <kbd>Esc</kbd> deselect.</p>
+    </div>
     <h2>View</h2>
     <label class="check"><input type="checkbox" id="showpins" checked> Show pins</label>
     <label class="check" id="fineopt" hidden><input type="checkbox" id="fine"> Fine buildings</label>
@@ -93,7 +118,7 @@ kbd{font:.75rem ui-monospace,Menlo,monospace;background:var(--panel2);border:1px
     <p class="hint" id="order"></p>
   </aside>
   <div id="wrap">
-    <div id="stage"><img id="art" alt="Map being edited" draggable="false"><canvas id="over"></canvas><div id="pins"></div></div>
+    <div id="stage"><img id="art" alt="Map being edited" draggable="false"><canvas id="over"></canvas><svg id="bover" xmlns="http://www.w3.org/2000/svg"></svg><div id="pins"></div></div>
     <div id="ring"></div>
     <div id="status" role="status"></div>
     <div id="impbox" hidden>
@@ -139,6 +164,7 @@ const PAL = {sea:'#a9bcbc', land:'#e6dcc0', ink:'#4a3d2e', forest:'#a8b28a', riv
   peak:'#d9c8a3', peakShade:'#a98f68', tree:'#94a678', treeShade:'#66794f', building:'#d3bf95', street:'#f1e8d0', hatch:'#bcae7e'};
 
 let T = null, doc = null, masks = {}, data = {}, cache = {}, tool = null, erasing = false, size = 30;
+const bt = {on:false, sel:null, hover:null, drag:null, sliding:false, def:{a:0,len:24,w:5}};
 let view = {s:1,x:0,y:0}, undo = [], redo = [], dirty = false, docs = [], stroke = null, spaceDown = false, pan = null, timer = 0, url = null;
 const wrap = $('#wrap'), stage = $('#stage'), art = $('#art'), over = $('#over'), ring = $('#ring'), statusEl = $('#status');
 const octx = over.getContext('2d');
@@ -264,6 +290,28 @@ function compass(cx,cy,R){
   }
   return s+'<path d="M'+(cx-12)+' '+f(cy-R-16)+'v-34l24 34v-34" fill="none" stroke="'+ink+'" stroke-width="4.5" stroke-linejoin="round"/>';
 }
+function bridgeSvg(b){
+  // x runs along the span, y across it. Foot bridges are planks, wider ones are stone with a parapet and piers.
+  const K = T.K, h = b.len*K/2, r = b.w*K/2, ink = PAL.ink, foot = b.w < 3.5, f = n => n.toFixed(1);
+  const e = Math.min(h*.3,r*1.1+3), fl = foot ? r*.15 : Math.min(r*.45,h*.2);
+  const deck = (y,ex) => 'M'+f(-h)+' '+f(-y-ex)+'L'+f(e-h)+' '+f(-y)+'L'+f(h-e)+' '+f(-y)+'L'+f(h)+' '+f(-y-ex)+'L'+f(h)+' '+f(y+ex)+'L'+f(h-e)+' '+f(y)+'L'+f(e-h)+' '+f(y)+'L'+f(-h)+' '+f(y+ex)+'Z';
+  const sides = 'M'+f(-h)+' '+f(-r-fl)+'L'+f(e-h)+' '+f(-r)+'L'+f(h-e)+' '+f(-r)+'L'+f(h)+' '+f(-r-fl)+'M'+f(-h)+' '+f(r+fl)+'L'+f(e-h)+' '+f(r)+'L'+f(h-e)+' '+f(r)+'L'+f(h)+' '+f(r+fl);
+  const place = 'rotate('+f(b.a)+')', s = Math.max(1,r*.18);
+  let art = '';
+  if(foot){
+    art = '<path d="'+deck(r,fl)+'" fill="#c9b083"/>';
+    let planks = ''; for(let x = -h+3; x < h-1; x += 3.4) planks += 'M'+f(x)+' '+f(-r)+'V'+f(r);
+    art += '<path d="'+planks+'" stroke="'+ink+'" stroke-width=".7" opacity=".55" fill="none"/>';
+  } else {
+    const p = Math.max(1.3,r*.2), span = r*2.6+22, n = Math.max(0,Math.round((h*2-e*2)/span)-1), pw = Math.min(r*.55,6);
+    let piers = ''; for(let i = 1; i <= n; i++){ const x = -h+e+(h*2-e*2)*i/(n+1); piers += 'M'+f(x-pw)+' '+f(-r)+'L'+f(x)+' '+f(-r-pw*1.3)+'L'+f(x+pw)+' '+f(-r)+'ZM'+f(x-pw)+' '+f(r)+'L'+f(x)+' '+f(r+pw*1.3)+'L'+f(x+pw)+' '+f(r)+'Z'; }
+    art = (piers ? '<path d="'+piers+'" fill="'+PAL.peak+'" stroke="'+ink+'" stroke-width="1.2" stroke-linejoin="round"/>' : '')+
+      '<path d="'+deck(r,fl)+'" fill="'+PAL.peak+'"/><path d="'+deck(r-p,fl)+'" fill="'+PAL.street+'"/>';
+  }
+  return '<g transform="translate('+f(b.x*K)+' '+f(b.y*K)+')"><path d="'+deck(r,fl)+'" fill="'+ink+'" opacity=".25" transform="translate('+f(s)+' '+f(s*1.4)+') '+place+'"/>'+
+    '<g transform="'+place+'">'+art+'<path d="'+sides+'" fill="none" stroke="'+ink+'" stroke-width="'+(foot ? 1.1 : 1.5)+'" stroke-linejoin="round"/></g></g>';
+}
+const bridges = () => (doc.bridges||[]).map(bridgeSvg).join('');
 function read(id){
   if(data[id]) return data[id];
   const {W,H} = T, px = masks[id].getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data, a = new Uint8Array(W*H);
@@ -389,7 +437,7 @@ function draw(){
       '<path d="'+coast+'" fill="'+PAL.land+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="2.6" stroke-linejoin="round"/>'+
       '<path d="'+water+'" fill="'+PAL.river+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1.2"/>'+
       '<path d="'+fp+'" fill="'+PAL.forest+'" fill-rule="evenodd" opacity=".55"/>'+
-      '<path d="'+road+'" fill="'+ink+'" fill-rule="evenodd"/>'+
+      '<path d="'+road+'" fill="'+ink+'" fill-rule="evenodd"/>'+bridges()+
       '<g>'+marks+'</g>'+compass(VW-310,VH-340,150);
   } else {
     const fields = memo('fields',['fields'],() => pathOf(contours(bin(read('fields'),127),16),1.5));
@@ -402,7 +450,7 @@ function draw(){
       '<path d="'+fields+'" fill="#ded09f" fill-rule="evenodd"/><path d="'+fields+'" fill="url(#hatch)" fill-rule="evenodd"/>'+
       '<path d="'+(doc.vectors && doc.vectors.wa ? doc.vectors.wa : '')+water+'" fill="'+PAL.river+'" fill-rule="evenodd"/>'+
       '<path d="'+fp+'" fill="'+PAL.forest+'" fill-rule="evenodd" opacity=".55"/>'+
-      '<path d="'+road+'" fill="'+PAL.street+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1.5"/>'+
+      '<path d="'+road+'" fill="'+PAL.street+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1.5"/>'+bridges()+
       (doc.vectors && doc.vectors.b ? '<defs><path id="blds" d="'+doc.vectors.b+'" stroke-linejoin="miter"/></defs><use href="#blds" fill="none" stroke="'+ink+'" stroke-width="'+(doc.vectors.sw+1.3)+'"/><use href="#blds" fill="'+PAL.building+'" stroke="'+PAL.building+'" stroke-width="'+doc.vectors.sw+'"/><path d="'+doc.vectors.w+'" fill="'+ink+'" fill-rule="evenodd"/>' : '')+
       (doc.fine
         ? '<path d="'+blocks+'" fill="'+ink+'" fill-rule="evenodd" opacity=".35" transform="translate(2 3)"/><path d="'+blocks+'" fill="'+PAL.building+'" fill-rule="evenodd" stroke="'+ink+'" stroke-width="1" stroke-linejoin="round"/>'
@@ -424,10 +472,10 @@ function refresh(){
 
 /* ---------- document ---------- */
 function touch(id){ ver[id] = (ver[id]||0)+1; delete data[id]; }
-function setTool(l){ tool = l; size = l.size; $('#size').value = size; syncTools(); }
+function setTool(l){ tool = l; size = l.size; $('#size').value = size; setStamp(false); syncTools(); }
 function syncTools(){
   $('#sizev').textContent = size;
-  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('on', tool && b.dataset.id === tool.id));
+  document.querySelectorAll('#tools .tool').forEach(b => b.classList.toggle('on', tool && b.dataset.id === tool.id));
   $('#paint').classList.toggle('on',!erasing); $('#erase').classList.toggle('on',erasing);
   $('#erase').textContent = tool && tool.erase ? tool.erase : 'Erase';
   $('#undo').disabled = !undo.length; $('#redo').disabled = !redo.length;
@@ -443,7 +491,8 @@ function buildTools(){
 }
 function loadImage(src){ return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src+'?'+Date.now(); }); }
 async function open(meta,blank){
-  doc = {id:meta.id,title:meta.title,template:meta.template,isNew:!!blank,compass:meta.compass !== false,fine:!!meta.fine};
+  doc = {id:meta.id,title:meta.title,template:meta.template,isNew:!!blank,compass:meta.compass !== false,fine:!!meta.fine,bridges:(meta.bridges||[]).map(b => ({...b}))};
+  bt.sel = null;
   $('#fine').checked = doc.fine; $('#fineopt').hidden = meta.template !== 'town'; T = Object.assign({},TEMPLATES[meta.template]);
   if(meta.w && meta.h){ T.W = meta.w; T.H = meta.h; }
   masks = {}; data = {}; cache = {}; ver = {}; undo = []; redo = []; dirty = !!blank;
@@ -477,7 +526,7 @@ async function save(useIt){
   doc.title = $('#title').value.trim(); if(!doc.title){ say('Give the map a name first.'); return; }
   say('Saving…'); lastSvg = draw();
   const m = {}; for(const l of T.layers) m[l.id] = masks[l.id].toDataURL('image/png');
-  const r = await fetch('/api/mapdoc/'+doc.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:doc.title,template:doc.template,w:T.W,h:T.H,compass:doc.compass,fine:doc.fine,vectors:doc.vectors||undefined,svg:lastSvg,masks:m,use_on_site:!!useIt})});
+  const r = await fetch('/api/mapdoc/'+doc.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:doc.title,template:doc.template,w:T.W,h:T.H,compass:doc.compass,fine:doc.fine,bridges:doc.bridges,vectors:doc.vectors||undefined,svg:lastSvg,masks:m,use_on_site:!!useIt})});
   const j = await r.json().catch(() => ({ok:false,errors:['The server did not answer.']}));
   if(!j.ok){ say('Not saved: '+(j.errors||[]).join(' ')); return; }
   dirty = false; doc.isNew = false; await list(doc.id);
@@ -494,9 +543,102 @@ function applyView(){
   stage.style.width = T.W+'px'; stage.style.height = T.H+'px';
   stage.style.transform = 'translate('+view.x+'px,'+view.y+'px) scale('+view.s+')';
   stage.style.setProperty('--inv',String(1/view.s));
+  drawHandles();
+}
+
+/* ---------- bridge stamps ---------- */
+// Bridges live in doc.bridges as {x,y,a,len,w}: mask units, angle in degrees. They are real objects
+// rather than paint, so they stay editable after saving.
+const num = n => Math.round(n*10)/10, turn = a => ((a%180)+180)%180;
+function setStamp(on){
+  bt.on = on; wrap.classList.toggle('stamp',on);
+  $('#bridge').classList.toggle('on',on); $('#bpanel').hidden = !on; $('#brushbox').hidden = on;
+  if(on){ tool = null; ring.style.display = 'none'; syncTools(); } else { bt.sel = null; bt.hover = null; }
+  syncBridge(); drawHandles();
+}
+function syncBridge(){
+  const b = bt.sel || bt.def;
+  $('#bw').value = b.w; $('#bl').value = b.len; $('#ba').value = b.a;
+  $('#bwv').textContent = b.w; $('#blv').textContent = Math.round(b.len); $('#bav').textContent = Math.round(b.a)+'°';
+  $('#bdel').disabled = !bt.sel;
+  document.querySelectorAll('#bkinds button').forEach(k => k.classList.toggle('on',+k.dataset.w === b.w));
+}
+function saveB(){ undo.push({bridges:doc.bridges.map(b => ({...b}))}); if(undo.length>15) undo.shift(); redo = []; dirty = true; syncTools(); }
+function changed(){ if(bt.sel) Object.assign(bt.def,{a:bt.sel.a,len:bt.sel.len,w:bt.sel.w}); syncBridge(); drawHandles(); refresh(); }
+function setB(k,v){
+  if(bt.sel){ if(!bt.sliding) saveB(); bt.sel[k] = v; } else bt.def[k] = v;
+  changed();
+}
+function grips(b){
+  const a = b.a*Math.PI/180, c = Math.cos(a), s = Math.sin(a), h = b.len/2, up = b.w/2+22/view.s;
+  return {c,s,left:[b.x-c*h,b.y-s*h],right:[b.x+c*h,b.y+s*h],spin:[b.x+s*up,b.y-c*up]};
+}
+function hit(mx,my){
+  const r = 10/view.s, near = p => Math.hypot(p[0]-mx,p[1]-my) <= r;
+  if(bt.sel){ const g = grips(bt.sel); if(near(g.spin)) return {b:bt.sel,mode:'spin'}; if(near(g.left)) return {b:bt.sel,mode:'end',fix:g.right,dir:-1}; if(near(g.right)) return {b:bt.sel,mode:'end',fix:g.left,dir:1}; }
+  for(let i = doc.bridges.length-1; i >= 0; i--){
+    const b = doc.bridges[i], g = grips(b), dx = mx-b.x, dy = my-b.y;
+    if(Math.abs(dx*g.c+dy*g.s) <= b.len/2 && Math.abs(dy*g.c-dx*g.s) <= Math.max(b.w/2,6/view.s)) return {b,mode:'move'};
+  }
+  return null;
+}
+function drawHandles(){
+  const o = $('#bover'); if(!T) return;
+  o.setAttribute('viewBox','0 0 '+T.W+' '+T.H);
+  let s = '';
+  if(bt.on){
+    const scale = '<g transform="scale('+1/T.K+')" ', d = bt.drag;
+    if(d && d.mode === 'new') s += scale+'opacity=".9">'+bridgeSvg(d.b)+'</g>';
+    else if(d) s += scale+'>'+bridgeSvg(d.b)+'</g>';
+    else if(bt.hover) s += scale+'opacity=".55">'+bridgeSvg(bt.hover)+'</g>';
+    if(bt.sel){
+      const b = bt.sel, g = grips(b), w = 1.5/view.s, r = 6/view.s, top = [b.x+g.s*b.w/2,b.y-g.c*b.w/2];
+      const dot = (p,fill) => '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="'+r+'" fill="'+fill+'" stroke="#000" stroke-width="'+w+'"/>';
+      s += '<g transform="translate('+b.x+' '+b.y+') rotate('+b.a+')"><rect x="'+(-b.len/2)+'" y="'+(-b.w/2)+'" width="'+b.len+'" height="'+b.w+'" fill="none" stroke="#d9a441" stroke-width="'+w+'" stroke-dasharray="'+4/view.s+' '+3/view.s+'"/></g>'+
+        '<path d="M'+top[0]+' '+top[1]+'L'+g.spin[0]+' '+g.spin[1]+'" stroke="#d9a441" stroke-width="'+w+'"/>'+dot(g.spin,'#d9a441')+dot(g.left,'#fff')+dot(g.right,'#fff');
+    }
+  }
+  o.innerHTML = s;
+}
+function bridgeDown(e){
+  const [mx,my] = toMap(e), h = hit(mx,my); bt.hover = null;
+  if(h){
+    bt.sel = h.b; bt.drag = {...h,ox:mx-h.b.x,oy:my-h.b.y,saved:false};
+  } else {
+    bt.drag = {mode:'new',sx:mx,sy:my,px:e.clientX,py:e.clientY,b:{x:num(mx),y:num(my),a:bt.def.a,len:bt.def.len,w:bt.def.w}};
+  }
+  syncBridge(); drawHandles();
+}
+function bridgeMove(e){
+  const [mx,my] = toMap(e), d = bt.drag;
+  if(!d){ bt.hover = hit(mx,my) ? null : {x:mx,y:my,a:bt.def.a,len:bt.def.len,w:bt.def.w}; drawHandles(); return; }
+  const b = d.b;
+  if(d.mode !== 'new' && !d.saved){ saveB(); d.saved = true; }
+  if(d.mode === 'new'){
+    if(Math.hypot(e.clientX-d.px,e.clientY-d.py) >= 4){ b.x = num((d.sx+mx)/2); b.y = num((d.sy+my)/2); b.len = Math.max(4,num(Math.hypot(mx-d.sx,my-d.sy))); b.a = Math.round(turn(Math.atan2(my-d.sy,mx-d.sx)*180/Math.PI)); }
+  } else if(d.mode === 'move'){ b.x = num(mx-d.ox); b.y = num(my-d.oy); }
+  else if(d.mode === 'spin'){
+    let a = Math.atan2(my-b.y,mx-b.x)*180/Math.PI+90; if(e.shiftKey) a = Math.round(a/15)*15;
+    b.a = Math.round(turn(a));
+  } else {
+    const g = grips(b), len = Math.max(4,d.dir*((mx-d.fix[0])*g.c+(my-d.fix[1])*g.s));
+    b.len = num(len); b.x = num(d.fix[0]+d.dir*g.c*len/2); b.y = num(d.fix[1]+d.dir*g.s*len/2);
+  }
+  if(d.mode !== 'new'){ changed(); return; }
+  drawHandles();
+}
+function bridgeUp(){
+  const d = bt.drag; if(!d) return; bt.drag = null;
+  if(d.mode === 'new'){ saveB(); doc.bridges.push(d.b); bt.sel = d.b; }
+  changed();
+}
+function deleteBridge(){
+  if(!bt.sel) return; saveB();
+  doc.bridges.splice(doc.bridges.indexOf(bt.sel),1); bt.sel = null; syncBridge(); drawHandles(); refresh();
 }
 function toMap(e){ const r = stage.getBoundingClientRect(); return [(e.clientX-r.left)/view.s,(e.clientY-r.top)/view.s]; }
 function moveRing(e){
+  if(bt.on) return;
   const r = wrap.getBoundingClientRect(), d = size*view.s;
   ring.style.display = spaceDown||pan ? 'none' : 'block'; ring.style.left = e.clientX-r.left+'px'; ring.style.top = e.clientY-r.top+'px'; ring.style.width = ring.style.height = d+'px';
 }
@@ -504,6 +646,7 @@ wrap.addEventListener('pointerdown', e => {
   if(!doc || e.target.closest('#newbox,#impbox')) return;
   wrap.setPointerCapture(e.pointerId);
   if(spaceDown || e.button === 1 || e.button === 2){ pan = {x:e.clientX,y:e.clientY,vx:view.x,vy:view.y}; return; }
+  if(bt.on){ bridgeDown(e); return; }
   if(!tool) return;
   const x = masks[tool.id].getContext('2d',{willReadFrequently:true}), [mx,my] = toMap(e);
   undo.push({id:tool.id,img:x.getImageData(0,0,T.W,T.H)}); if(undo.length>15) undo.shift(); redo = [];
@@ -513,17 +656,18 @@ wrap.addEventListener('pointerdown', e => {
 wrap.addEventListener('pointermove', e => {
   moveRing(e);
   if(pan){ view.x = pan.vx+e.clientX-pan.x; view.y = pan.vy+e.clientY-pan.y; applyView(); return; }
+  if(bt.on){ if(!spaceDown) bridgeMove(e); return; }
   if(!stroke) return;
   const [mx,my] = toMap(e);
   for(const c of [stroke.x,octx]){ c.beginPath(); c.moveTo(stroke.px,stroke.py); c.lineTo(mx,my); c.stroke(); }
   stroke.px = mx; stroke.py = my;
 });
 function endStroke(){
-  pan = null; if(!stroke) return; stroke = null; dirty = true;
+  pan = null; bridgeUp(); if(!stroke) return; stroke = null; dirty = true;
   touch(tool.id); syncTools(); refresh();
 }
 wrap.addEventListener('pointerup',endStroke); wrap.addEventListener('pointercancel',endStroke);
-wrap.addEventListener('pointerleave',() => { ring.style.display = 'none'; });
+wrap.addEventListener('pointerleave',() => { ring.style.display = 'none'; bt.hover = null; drawHandles(); });
 wrap.addEventListener('contextmenu',e => e.preventDefault());
 wrap.addEventListener('wheel', e => {
   e.preventDefault(); const r = wrap.getBoundingClientRect(), cx = e.clientX-r.left, cy = e.clientY-r.top;
@@ -532,12 +676,20 @@ wrap.addEventListener('wheel', e => {
 },{passive:false});
 function step(from,to){
   const u = from.pop(); if(!u) return;
+  if(u.bridges){ to.push({bridges:doc.bridges}); doc.bridges = u.bridges; bt.sel = null; dirty = true; syncTools(); syncBridge(); drawHandles(); refresh(); return; }
   const x = masks[u.id].getContext('2d',{willReadFrequently:true});
   to.push({id:u.id,img:x.getImageData(0,0,T.W,T.H)}); x.putImageData(u.img,0,0); touch(u.id); dirty = true; syncTools(); refresh();
 }
 $('#undo').onclick = () => step(undo,redo); $('#redo').onclick = () => step(redo,undo);
 $('#paint').onclick = () => { erasing = false; syncTools(); }; $('#erase').onclick = () => { erasing = true; syncTools(); };
 $('#size').oninput = e => { size = +e.target.value; if(tool) tool.size = size; syncTools(); };
+$('#bridge').onclick = () => setStamp(true);
+[['#bw','w'],['#bl','len'],['#ba','a']].forEach(([id,k]) => {
+  $(id).oninput = e => { setB(k,+e.target.value); bt.sliding = !!bt.sel; };
+  $(id).onchange = () => { bt.sliding = false; };
+});
+document.querySelectorAll('#bkinds button').forEach(k => { k.onclick = () => setB('w',+k.dataset.w); });
+$('#bdel').onclick = deleteBridge;
 $('#fine').onchange = e => { doc.fine = e.target.checked; dirty = true; refresh(); };
 $('#showpins').onchange = e => { $('#pins').hidden = !e.target.checked; };
 $('#save').onclick = () => save(false); $('#use').onclick = () => save(true);
@@ -548,6 +700,13 @@ window.addEventListener('keydown', e => {
   if(mod && e.key.toLowerCase() === 'z'){ e.preventDefault(); e.shiftKey ? step(redo,undo) : step(undo,redo); }
   else if(mod && e.key.toLowerCase() === 's'){ e.preventDefault(); save(false); }
   else if(e.code === 'Space'){ e.preventDefault(); spaceDown = true; wrap.classList.add('pan'); ring.style.display = 'none'; }
+  else if(bt.on){
+    const b = bt.sel || bt.def;
+    if(e.key === ',' || e.key === '.'){ e.preventDefault(); setB('a',Math.round(turn(b.a+(e.key === ',' ? -5 : 5)))); }
+    else if(e.key === '[' || e.key === ']'){ e.preventDefault(); setB('w',Math.min(24,Math.max(1,b.w+(e.key === '[' ? -.5 : .5)))); }
+    else if(e.key === 'Delete' || e.key === 'Backspace'){ e.preventDefault(); deleteBridge(); }
+    else if(e.key === 'Escape'){ bt.sel = null; syncBridge(); drawHandles(); }
+  }
   else if(e.key === 'e' || e.key === 'E'){ erasing = !erasing; syncTools(); }
   else if(e.key === '['){ size = Math.max(2,size-(size>12?4:1)); $('#size').value = size; syncTools(); }
   else if(e.key === ']'){ size = Math.min(140,size+(size>=12?4:1)); $('#size').value = size; syncTools(); }

@@ -44,6 +44,10 @@ With `python3 nephland.py edit` running, open http://localhost:8800/studio. Pick
 roads, forests, mountains and hills are separate layers, and town maps have streets, buildings,
 fields, trees and walls. Roads and streets always draw under trees and buildings.
 
+Click **Bridge** under Stamps and drag from one bank to the other to lay a bridge. Choose **Foot**,
+**Street** or **Grand** or set the width yourself. Click a bridge later to move, rotate, resize or
+delete it.
+
 To convert an existing town map, drag an image onto the studio or click **Import town map**. The
 studio samples its main colors and guesses what each one is. Correct any guess in the panel and the
 map updates. Then touch up with the brushes and save.

@@ -483,7 +483,7 @@ def list_mapdocs():
         for p in sorted(MAPDOCS.glob("*/map.json")):
             meta = json.loads(p.read_text(encoding="utf-8"))
             docs.append({"id": p.parent.name, "title": meta.get("title", p.parent.name), "template": meta.get("template", "world"),
-                         "w": meta.get("w"), "h": meta.get("h"), "compass": meta.get("compass", True), "fine": meta.get("fine", False)})
+                         "w": meta.get("w"), "h": meta.get("h"), "compass": meta.get("compass", True), "fine": meta.get("fine", False), "bridges": meta.get("bridges", [])})
     return docs
 
 
@@ -506,6 +506,14 @@ def save_mapdoc(mid, body):
         size["compass"] = False
     if body.get("fine") is True:
         size["fine"] = True
+    bridges = body.get("bridges") or []
+    if not isinstance(bridges, list) or len(bridges) > 500:
+        return ["Bad bridge list"]
+    for b in bridges:
+        if not isinstance(b, dict) or not all(type(b.get(k)) in (int, float) for k in ("x", "y", "a", "len", "w")):
+            return ["Bad bridge"]
+    if bridges:
+        size["bridges"] = [{k: round(b[k], 1) for k in ("x", "y", "a", "len", "w")} for b in bridges]
     decoded = {}
     for name, url in masks.items():
         if not re.fullmatch(r"[a-z]+", name) or not isinstance(url, str) or not url.startswith("data:image/png;base64,"):
