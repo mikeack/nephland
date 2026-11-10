@@ -79,7 +79,7 @@ def build(dm):
     for m in maps["maps"]:
         if m["id"] not in ok:
             continue
-        item = {k: m[k] for k in ("id", "title", "image", "parent") if k in m}
+        item = {k: m[k] for k in ("id", "title", "image", "parent", "globe") if k in m}
         if dm:
             item["revealed"] = m.get("revealed", False)
         out_maps.append(item)

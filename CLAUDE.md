@@ -83,6 +83,10 @@ GitHub Pages updates in about a minute.
 - Ids are lowercase with hyphens, and unique across maps and locations.
 - A map is visible to players only if it **and all its ancestors** are `revealed`.
   Locations on a hidden map are never published, even if marked revealed.
+- The root map can carry an optional `"globe": {"lat": 12, "lon": 0, "height": 70, "trim": 3.3}`. It places
+  the map on the planet in the Globe view: `lat`/`lon` are where the map's centre sits, `height` is how many
+  degrees tall the image is, and `trim` is the percentage of the image width cut from each edge (it removes the
+  studio's border frame). Those four values are the defaults, so leave it out unless you want to change one.
 - Images go in `dm/maps/`. PNG, JPG, WebP or SVG. Keep each under about 3 MB (the site is
   served to phones). Use descriptive filenames.
 
@@ -102,6 +106,14 @@ Mike's in-world calendar: 13 months of 24 days (6-day weeks), special days, an `
 - `today`: `{"year":35,"month":"linfey","day":14}` or `{"year":35,"special":"new-cycle"}`; `show_today:false` hides it from players.
 - Months and special days are always public. Hidden events and `dm_notes` never reach `docs/`; `check` scans for them.
 - Pins can be linked to directly with `#<mapId>@<locationId>`.
+
+## Globe view
+
+`#globe` (the **Globe** tab) wraps the root map onto a planet as a second way to look at it. It reads the same
+`map-data.json` and map image as the flat map, so it shows exactly the pins players can already see and nothing
+else: revealing, hiding or repainting changes both views on the next build. It is plain WebGL inside
+`viewer/index.html` (no library), and the tab hides itself on a device without WebGL. Only the real map image is
+drawn. Everything off the map is open sea, so never add invented coastlines for lands that have no map yet.
 
 ## Map studio
 

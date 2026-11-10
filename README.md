@@ -6,6 +6,9 @@ DM-controlled "reveal" system.
 
 Live site: https://nephland.mikeack.com
 
+The **Globe** tab shows the same world map and pins wrapped onto a planet. It updates with every publish,
+because it reads the same files as the flat map.
+
 ## Run it locally
 
 ```

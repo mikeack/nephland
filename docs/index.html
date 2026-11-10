@@ -117,6 +117,12 @@ a{color:var(--gold)}
   #stage.zoomed .pin .label,.pin.sel .label{display:block}
 }
 
+#globe{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}
+#globe.dragging{cursor:grabbing}
+#gpins{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+#gpins .pin{pointer-events:auto;left:0;top:0}
+@media (max-width:820px){#gpins.zoomed .pin .label{display:block}}
+
 [hidden]{display:none!important}
 .tabs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .tab{background:none;border:1px solid var(--line);border-radius:99px;padding:6px 14px;cursor:pointer;color:var(--muted);text-decoration:none;font-size:.9rem}
@@ -176,6 +182,7 @@ a{color:var(--gold)}
   <nav id="crumbs" aria-label="Map location"></nav>
   <div class="tabs" id="tabs" hidden>
     <a class="tab on" id="tabMap" href="#">Map</a>
+    <a class="tab" id="tabGlobe" href="#globe" hidden>Globe</a>
     <a class="tab" id="tabCal" href="#calendar">Calendar</a>
     <a class="pill" id="todayPill" href="#calendar" hidden></a>
   </div>
@@ -185,6 +192,8 @@ a{color:var(--gold)}
     <div id="viewport" tabindex="0" aria-label="Interactive map. Drag to pan, scroll or pinch to zoom.">
       <div id="stage"><img id="mapimg" alt="" draggable="false"><div id="pins"></div></div>
     </div>
+    <canvas id="globe" tabindex="0" aria-label="Globe. Drag to spin, scroll or pinch to zoom." hidden></canvas>
+    <div id="gpins" hidden></div>
     <div class="ctrl"><button id="back" hidden>← Back</button></div>
     <div class="zoom">
       <button id="zin" aria-label="Zoom in">+</button>
@@ -200,7 +209,7 @@ a{color:var(--gold)}
     <h3>Places on this map</h3>
     <ul id="places"></ul>
     <p id="empty" hidden>Nothing discovered here yet.</p>
-    <p class="hint">Drag to pan. Scroll or pinch to zoom. Glowing red pins open a closer map.</p>
+    <p class="hint" id="hint">Drag to pan. Scroll or pinch to zoom. Glowing red pins open a closer map.</p>
   </aside>
 </div>
 <main id="calview" hidden aria-label="Calendar"></main>
@@ -212,7 +221,7 @@ const $ = s => document.querySelector(s);
 const els = {vp:$('#viewport'),stage:$('#stage'),img:$('#mapimg'),pins:$('#pins'),tip:$('#tip'),toast:$('#toast'),
   crumbs:$('#crumbs'),back:$('#back'),title:$('#title'),mode:$('#mode'),list:$('#places'),card:$('#card'),
   empty:$('#empty'),mapTitle:$('#mapTitle'),wrap:$('#wrap')};
-let data, maps, cur, isDM = false, pendingLoc = null, cal = null, tiles = [];
+let data, maps, cur, isDM = false, pendingLoc = null, cal = null, tiles = [], globeMode = false;
 let view = {s:1,x:0,y:0};
 const MAX = 8;
 const clamp = (v,a,b) => Math.min(b,Math.max(a,v));
@@ -236,6 +245,7 @@ function fit(){
   const ar = (els.img.naturalWidth||4)/(els.img.naturalHeight||3);
   els.stage.style.width = Math.max(50, Math.min(vw, vh*ar)) + 'px';
   apply();
+  if(globeMode) G.open(cur, els.img);
   if(pendingLoc){ const l = pendingLoc; pendingLoc = null; select(l,true); }
 }
 function zoomAt(cx,cy,f){
@@ -283,9 +293,9 @@ els.vp.addEventListener('wheel', e => {
   const r = els.vp.getBoundingClientRect();
   zoomAt(e.clientX-r.left, e.clientY-r.top, Math.exp(-e.deltaY*0.0015));
 },{passive:false});
-$('#zin').onclick = () => zoomCenter(1.5);
-$('#zout').onclick = () => zoomCenter(1/1.5);
-$('#zreset').onclick = () => { view = {s:1,x:0,y:0}; apply(); };
+$('#zin').onclick = () => globeMode ? G.zoom(1.5) : zoomCenter(1.5);
+$('#zout').onclick = () => globeMode ? G.zoom(1/1.5) : zoomCenter(1/1.5);
+$('#zreset').onclick = () => { if(globeMode) return G.reset(); view = {s:1,x:0,y:0}; apply(); };
 window.addEventListener('resize', () => { fit(); hideTip(); });
 
 /* DM helper: shift-click empty map to copy coordinates for locations.json.
@@ -357,7 +367,7 @@ function renderCard(l){
   c.hidden = false;
 }
 function select(l,center){
-  markSel(l.id); renderCard(l); if(center) centerOn(l);
+  markSel(l.id); renderCard(l); if(center){ if(globeMode) G.flyTo(l); else centerOn(l); }
 }
 
 /* ---------- render map ---------- */
@@ -407,6 +417,7 @@ function renderPins(){
     lb.onclick = () => select(l,true);
     li.appendChild(lb); els.list.appendChild(li);
   });
+  if(globeMode) G.setPins(locs);
 }
 function show(m){
   cur = m; hideTip(); els.card.hidden = true;
@@ -418,6 +429,10 @@ function show(m){
   els.img.onerror = () => fatal('The map image <code>'+m.image+'</code> failed to load.');
   els.img.src = 'maps/'+encodeURI(m.image);
   renderCrumbs(); renderPins();
+  els.vp.hidden = globeMode; if(globeMode) els.back.hidden = true; else G.close();
+  $('#hint').textContent = globeMode ? 'Drag to spin. Scroll or pinch to zoom. Glowing red pins open a closer map.'
+    : 'Drag to pan. Scroll or pinch to zoom. Glowing red pins open a closer map.';
+  if(globeMode) document.title = 'Globe — '+data.title;
   if(els.img.complete && els.img.naturalWidth) fit();
   if(hooks.mapShown) hooks.mapShown(m);
 }
@@ -429,11 +444,13 @@ function route(){
   document.querySelector('.layout').hidden = !!isCal;
   $('#calview').hidden = !isCal;
   $('#crumbs').hidden = !!isCal;
-  $('#tabMap').classList.toggle('on', !isCal);
+  globeMode = !isCal && path === 'globe' && G.ok;
+  $('#tabMap').classList.toggle('on', !isCal && !globeMode);
+  $('#tabGlobe').classList.toggle('on', globeMode);
   $('#tabCal').classList.toggle('on', !!isCal);
-  if(isCal){ renderCal(path.split('/')); return; }
+  if(isCal){ G.close(); renderCal(path.split('/')); return; }
   document.title = data.title;
-  const target = maps[path || data.root] || maps[data.root];
+  const target = globeMode ? maps[data.root] : (maps[path || data.root] || maps[data.root]);
   pendingLoc = null;
   const loc = locId && data.locations.find(l => l.id === locId && l.map === target.id);
   if(loc) pendingLoc = loc;
@@ -442,6 +459,197 @@ function route(){
 els.back.onclick = () => { if(cur.parent) location.hash = encodeURIComponent(cur.parent); };
 window.addEventListener('hashchange', route);
 window.addEventListener('keydown', e => { if(e.key === 'Escape') closeCard(); });
+
+
+/* ---------- globe ----------
+   The root map wrapped onto a planet, as a second way to look at it. Plain WebGL, no libraries:
+   one full-canvas quad, and the fragment shader finds where each pixel's ray meets the sphere.
+   Only the real map image is drawn. Everything off the sheet is open sea in the map's own colour.
+   Where the sheet sits comes from the map's optional "globe" setting in maps.json:
+   { "lat": 12, "lon": 0, "height": 70, "trim": 3.3 }  (degrees; trim = % of the image width cut
+   from every edge, which removes the studio's border frame). */
+const G = (function(){
+  const cv = $('#globe'), pinsEl = $('#gpins'), RAD = Math.PI/180, F = 1/Math.tan(20*RAD);
+  let gl = null, U = {}, tex = null, loaded = '', on = false, raf = 0, last = 0;
+  let sheet = {lat:12*RAD, lon:0, h:70*RAD, w:70*RAD*2/3}, sea = [169/255,188/255,188/255];
+  let pins = [], d0 = 3, spin = true, fly = null, gmoved = false;
+  const cam = {lat:16*RAD, lon:-.2, d:3}, vel = {lat:0,lon:0}, gp = new Map(); let pinch = 0;
+  const still = window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches;
+
+  const VS = 'attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
+  const FS = `precision highp float;
+uniform vec2 uRes; uniform vec3 uCam,uFwd,uRight,uUp,uSea; uniform vec4 uSheet; uniform float uF,uPx,uLimb,uHas; uniform sampler2D uTex;
+const float PI=3.14159265;
+float line(float d,float w){return 1.-smoothstep(w*.4,w*1.6,d);}
+void main(){
+  vec2 p=(gl_FragCoord.xy-.5*uRes)/(.5*uRes.y);
+  vec3 rd=normalize(uF*uFwd+p.x*uRight+p.y*uUp);
+  float b=dot(uCam,rd), h=b*b-(dot(uCam,uCam)-1.);
+  vec3 P=normalize(uCam+(-b-sqrt(max(h,0.)))*rd);
+  float miss=sqrt(max(dot(uCam,uCam)-b*b,0.));           // how close the ray passes to the centre
+  float lat=asin(clamp(P.y,-1.,1.)), lon=atan(P.x,P.z);
+  float dl=mod(lon-uSheet.y+PI,2.*PI)-PI;
+  vec2 uv=vec2(.5+dl*cos(lat)/uSheet.w,.5-(lat-uSheet.x)/uSheet.z);
+  vec3 t=texture2D(uTex,uv).rgb;
+  float inS=uHas*step(0.,uv.x)*step(uv.x,1.)*step(0.,uv.y)*step(uv.y,1.)*step(abs(dl),1.5);
+  float st=PI/6., g=max(line(abs(fract(lat/st+.5)-.5)*st,uPx), line(abs(fract(lon/st+.5)-.5)*st*cos(lat),uPx));
+  vec3 col=mix(uSea,t,inS);
+  col=mix(col,vec3(.29,.24,.18),g*.13*(1.-inS*smoothstep(.03,.09,distance(t,uSea))));   // grid lines cross open sea only
+  col*=.8+.2*sqrt(max(dot(P,normalize(uCam-P)),0.));
+  vec3 bg=vec3(.051,.043,.031)+vec3(.42,.5,.5)*.28*exp(-max(miss-1.,0.)/.07);
+  gl_FragColor=vec4(mix(col,bg,smoothstep(1.-uLimb,1.,miss)),1.);
+}`;
+  function init(){
+    try{ gl = cv.getContext('webgl',{antialias:false,alpha:false}) || cv.getContext('experimental-webgl'); }catch(e){ gl = null; }
+    if(!gl) return false;
+    const sh = (type,src) => { const s = gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); return gl.getShaderParameter(s,gl.COMPILE_STATUS) ? s : null; };
+    const v = sh(gl.VERTEX_SHADER,VS), f = sh(gl.FRAGMENT_SHADER,FS); if(!v || !f) return false;
+    const pr = gl.createProgram(); gl.attachShader(pr,v); gl.attachShader(pr,f); gl.linkProgram(pr);
+    if(!gl.getProgramParameter(pr,gl.LINK_STATUS)) return false;
+    gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+    const a = gl.getAttribLocation(pr,'a'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+    ['uRes','uCam','uFwd','uRight','uUp','uSea','uSheet','uF','uPx','uLimb','uHas','uTex'].forEach(n => U[n] = gl.getUniformLocation(pr,n));
+    tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));
+    return true;
+  }
+  const ok = init();
+  cv.addEventListener('webglcontextlost', e => { e.preventDefault(); loaded = ''; });
+  cv.addEventListener('webglcontextrestored', () => { if(init() && on && cur) open(cur, els.img); });
+
+  /* Draw the map image into a power-of-two canvas (so it can have mipmaps on any phone) and hand it to the GPU. */
+  function load(m, img){
+    const key = m.id+'|'+img.src; if(loaded === key) return; loaded = key;
+    const c = Object.assign({lat:12,lon:0,height:70,trim:3.3}, m.globe || {});
+    const nw = img.naturalWidth || 1200, nh = img.naturalHeight || 800;
+    sheet = {lat:c.lat*RAD, lon:c.lon*RAD, h:c.height*RAD, w:c.height*RAD*nw/nh};
+    const cap = Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE)), pot = n => { let p = 256; while(p*2 <= Math.min(n,cap)) p *= 2; return p < n && p*2 <= cap ? p*2 : p; };
+    const w = pot(nw), h = pot(nh), k = document.createElement('canvas'); k.width = w; k.height = h;
+    const x = k.getContext('2d'); x.drawImage(img,0,0,w,h);
+    try{
+      const px = x.getImageData(Math.round(w*.012),Math.round(h*.012),1,1).data;   // sea colour, just inside the corner
+      sea = [px[0]/255,px[1]/255,px[2]/255];
+      const tx = Math.ceil(c.trim/100*w), ty = Math.ceil(c.trim/100*nw/nh*h);      // same distance on every edge
+      x.fillStyle = 'rgb('+px[0]+','+px[1]+','+px[2]+')';
+      if(tx > 0){ x.fillRect(0,0,w,ty); x.fillRect(0,h-ty,w,ty); x.fillRect(0,0,tx,h); x.fillRect(w-tx,0,tx,h); }
+    }catch(e){}
+    gl.bindTexture(gl.TEXTURE_2D,tex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,k);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const an = gl.getExtension('EXT_texture_filter_anisotropic');
+    if(an) gl.texParameterf(gl.TEXTURE_2D,an.TEXTURE_MAX_ANISOTROPY_EXT,Math.min(8,gl.getParameter(an.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+    cam.lat = sheet.lat+4*RAD; cam.lon = sheet.lon-.25; spin = !still; fly = null;
+    place();
+  }
+
+  const vec = (lat,lon) => [Math.cos(lat)*Math.sin(lon), Math.sin(lat), Math.cos(lat)*Math.cos(lon)];
+  const wrapPi = a => ((a+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;
+  function place(){ pins.forEach(p => { const lat = sheet.lat+(.5-p.l.y/100)*sheet.h; p.lat = lat; p.lon = sheet.lon+(p.l.x/100-.5)*sheet.w/Math.cos(lat); p.v = vec(lat,p.lon); }); }
+
+  function setPins(locs){
+    pinsEl.textContent = ''; pins = [];
+    locs.forEach(l => {
+      const hiddenLoc = isDM && !l.revealed, opens = l.opens && maps[l.opens];
+      const b = document.createElement('button');
+      b.className = 'pin '+(l.type||'poi')+(opens?' has-map':'')+(hiddenLoc?' hidden-loc':'');
+      b.dataset.id = l.id; b.setAttribute('aria-label', l.name + (opens ? ' (opens map)' : ''));
+      const dot = document.createElement('span'); dot.className = 'dot';
+      const lab = document.createElement('span'); lab.className = 'label'; lab.textContent = l.name;
+      b.append(dot,lab);
+      b.addEventListener('pointerenter', e => { if(e.pointerType === 'mouse' && !gp.size) showTip(b,l); });
+      b.addEventListener('pointerleave', hideTip);
+      b.addEventListener('focus', () => showTip(b,l));
+      b.addEventListener('blur', hideTip);
+      b.addEventListener('click', e => {
+        hideTip(); spin = false;
+        if(opens && e.pointerType === 'mouse'){ location.hash = encodeURIComponent(l.opens); return; }
+        select(l,false);
+      });
+      pinsEl.appendChild(b); pins.push({l, b});
+    });
+    place(); kick();
+  }
+
+  function resize(){
+    const r = Math.min(window.devicePixelRatio || 1, 2), w = Math.max(1,Math.round(cv.clientWidth*r)), h = Math.max(1,Math.round(cv.clientHeight*r));
+    if(cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+    const keep = cam.d >= d0-.001;
+    d0 = Math.sqrt(1+Math.pow(h/2*F/(.44*Math.min(w,h)),2));       // far enough that the whole planet fits
+    if(keep || cam.d > d0*1.2) cam.d = d0;
+  }
+  function draw(){
+    const w = cv.width, h = cv.height, c = vec(cam.lat,cam.lon), C = c.map(v => v*cam.d);
+    const right = [Math.cos(cam.lon),0,-Math.sin(cam.lon)], up = [-Math.sin(cam.lat)*Math.sin(cam.lon),Math.cos(cam.lat),-Math.sin(cam.lat)*Math.cos(cam.lon)];
+    const scale = h/2*F;
+    gl.viewport(0,0,w,h);
+    gl.uniform2f(U.uRes,w,h); gl.uniform3fv(U.uCam,C); gl.uniform3f(U.uFwd,-c[0],-c[1],-c[2]); gl.uniform3fv(U.uRight,right); gl.uniform3fv(U.uUp,up);
+    gl.uniform3fv(U.uSea,sea); gl.uniform4f(U.uSheet,sheet.lat,sheet.lon,sheet.h,sheet.w);
+    gl.uniform1f(U.uF,F); gl.uniform1f(U.uPx,(cam.d-1)/scale); gl.uniform1f(U.uLimb,1.5*Math.sqrt(cam.d*cam.d-1)/scale);
+    gl.uniform1f(U.uHas,loaded ? 1 : 0); gl.uniform1i(U.uTex,0);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    // pins ride on top as ordinary buttons
+    const cw = cv.clientWidth, ch = cv.clientHeight, s = ch/2*F;
+    pins.forEach(p => {
+      const v = p.v, front = v[0]*C[0]+v[1]*C[1]+v[2]*C[2] > 1+(cam.d-1)*.03;
+      p.b.hidden = !front; if(!front) return;
+      const dx = v[0]-C[0], dy = v[1]-C[1], dz = v[2]-C[2];
+      const z = -(dx*c[0]+dy*c[1]+dz*c[2]), x = dx*right[0]+dy*right[1]+dz*right[2], y = dx*up[0]+dy*up[1]+dz*up[2];
+      p.b.style.transform = 'translate('+(cw/2+x/z*s).toFixed(1)+'px,'+(ch/2-y/z*s).toFixed(1)+'px) translate(-50%,-50%)';
+    });
+    pinsEl.classList.toggle('zoomed', cam.d < 1+(d0-1)*.6);
+  }
+  function frame(t){
+    raf = 0; if(!on) return;
+    const dt = Math.min(.05,(t-last)/1000 || 0); last = t; let busy = gp.size > 0;
+    if(spin){ cam.lon += dt*.05; busy = true; }
+    if(!gp.size && Math.abs(vel.lon)+Math.abs(vel.lat) > 2e-4){ cam.lon += vel.lon; cam.lat = clamp(cam.lat+vel.lat,-1.45,1.45); vel.lon *= .92; vel.lat *= .92; busy = true; }
+    if(fly){ const k = still ? 1 : 1-Math.pow(.002,dt);
+      cam.lon += wrapPi(fly.lon-cam.lon)*k; cam.lat += (fly.lat-cam.lat)*k; cam.d += (fly.d-cam.d)*k; busy = true;
+      if(Math.abs(wrapPi(fly.lon-cam.lon)) < 1e-3 && Math.abs(fly.lat-cam.lat) < 1e-3 && Math.abs(fly.d-cam.d) < 2e-3) fly = null; }
+    cam.lon = wrapPi(cam.lon);
+    draw(); if(busy) kick();
+  }
+  function kick(){ if(on && !raf) raf = requestAnimationFrame(frame); }
+
+  function open(m, img){
+    if(!ok) return;
+    on = true; cv.hidden = false; pinsEl.hidden = false;
+    resize(); load(m, img); kick();
+  }
+  function close(){ on = false; cv.hidden = true; pinsEl.hidden = true; if(raf){ cancelAnimationFrame(raf); raf = 0; } }
+  function zoom(f){ spin = false; fly = null; cam.d = clamp(1+(cam.d-1)/f, 1.1, d0*1.2); hideTip(); kick(); }
+  function flyTo(l){ const p = pins.find(q => q.l.id === l.id); if(!p) return; spin = false; vel.lat = vel.lon = 0;
+    fly = {lat:clamp(p.lat,-1.4,1.4), lon:p.lon, d:Math.min(cam.d, 1+(d0-1)*.3)}; kick(); }
+  function reset(){ spin = false; vel.lat = vel.lon = 0; fly = {lat:sheet.lat+4*RAD, lon:sheet.lon, d:d0}; kick(); }
+
+  cv.addEventListener('pointerdown', e => {
+    cv.setPointerCapture(e.pointerId); gp.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(gp.size === 1) gmoved = false; else { const [a,b] = [...gp.values()]; pinch = Math.hypot(a.x-b.x,a.y-b.y); gmoved = true; }
+    fly = null; vel.lat = vel.lon = 0; kick();
+  });
+  cv.addEventListener('pointermove', e => {
+    const p = gp.get(e.pointerId); if(!p) return;
+    const dx = e.clientX-p.x, dy = e.clientY-p.y; p.x = e.clientX; p.y = e.clientY;
+    if(gp.size === 2){ const [a,b] = [...gp.values()], d = Math.hypot(a.x-b.x,a.y-b.y); if(pinch > 0) zoom(d/pinch); pinch = d; return; }
+    if(!gmoved && Math.hypot(dx,dy) < 1) return;
+    gmoved = true; spin = false; cv.classList.add('dragging'); hideTip();
+    const k = (cam.d-1)/(cv.clientHeight/2*F);                      // the surface follows the finger
+    vel.lon = -dx*k/Math.max(.3,Math.cos(cam.lat)); vel.lat = dy*k;
+    cam.lon += vel.lon; cam.lat = clamp(cam.lat+vel.lat,-1.45,1.45); kick();
+  });
+  const end = e => { gp.delete(e.pointerId); pinch = 0; if(!gp.size) cv.classList.remove('dragging'); kick(); };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('wheel', e => { e.preventDefault(); zoom(Math.exp(-e.deltaY*0.0015)); },{passive:false});
+  window.addEventListener('resize', () => { if(on){ resize(); kick(); } });
+
+  return {ok, open, close, setPins, flyTo, zoom, reset};
+})();
 
 
 /* ---------- calendar ---------- */
@@ -585,6 +793,7 @@ function renderSpecial(root,y,t){
 function setupTabs(){
   $('#tabs').hidden = false;
   $('#tabCal').hidden = !cal;
+  $('#tabGlobe').hidden = !G.ok;
   const t = cal && cal.today;
   if(t){
     const k = t.special ? 's' : 'm', id = t.special || t.month;
